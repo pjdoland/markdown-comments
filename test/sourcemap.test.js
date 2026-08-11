@@ -1,8 +1,8 @@
 /**
  * The source map is the riskiest piece of the extension: a wrong offset would
  * anchor a comment to the wrong words. These lock down the projection and the
- * refusal cases. Fidelity against GitHub's real renderer is checked separately
- * in test/render-parity, which needs a DOM.
+ * refusal cases. How faithfully the projection matches GitHub's real renderer
+ * is not covered here, since that needs a DOM.
  */
 const test = require('node:test');
 const assert = require('node:assert');

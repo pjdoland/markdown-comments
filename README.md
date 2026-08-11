@@ -149,9 +149,9 @@ node --test test/codec.test.js       # the file format
 node --test test/sourcemap.test.js   # selection to source mapping
 ```
 
-The DOM layer is checked against HTML from GitHub's own Markdown renderer
-(`POST /markdown`) rather than a local approximation, since the whole design
-rests on how GitHub actually renders footnotes and strips comments.
+The DOM layer has no automated coverage. Both halves of it, how GitHub renders
+footnotes and how it strips comments, are only observable in a real browser
+against real rendered output, so they are checked by hand.
 
 ## Limitations
 
