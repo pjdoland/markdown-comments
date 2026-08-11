@@ -122,8 +122,7 @@
 
   function buildEntries(root) {
     const entries = state.threads.map(function (thread) {
-      let range = state.overrides.get(thread.id) || null;
-      if (!range && !thread.isOrphaned) range = MDCAnchor.locate(root, thread);
+      const range = thread.isOrphaned ? null : MDCAnchor.locate(root, thread);
       return { id: thread.id, thread: thread, range: range };
     });
     entries.sort(function (a, b) {
@@ -199,6 +198,53 @@
     }
   }
 
+  // MARK: - Reloading after a write
+
+  const RESTORE_KEY = 'mdc:restore';
+
+  /**
+   * GitHub renders the Markdown on its side, so a comment only becomes a
+   * footnote once the page is asked for again. Reloading is the whole fix for
+   * the write showing up, and everything it costs (the panel, the selection,
+   * the scroll position) is cheap to carry across in sessionStorage.
+   */
+  function reloadWith(outcome) {
+    try {
+      sessionStorage.setItem(RESTORE_KEY, JSON.stringify({
+        owner: state.location.owner,
+        repo: state.location.repo,
+        ref: state.location.ref,
+        path: state.location.path,
+        selectedID: outcome.selectedID || null,
+        panelOpen: MDCPanel.isOpen(),
+        scrollY: window.scrollY,
+        notice: outcome.notice || null
+      }));
+    } catch (e) {
+      // Storage can be refused outright. Losing the selection is worth it to
+      // still show the comment.
+    }
+    state.busy = 'Reloading...';
+    MDCPanel.render(state);
+    location.reload();
+  }
+
+  /** The stash left by the write that caused this load, if it was this file. */
+  function takeStashedViewState(where) {
+    let stashed = null;
+    try {
+      const raw = sessionStorage.getItem(RESTORE_KEY);
+      sessionStorage.removeItem(RESTORE_KEY);
+      stashed = raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      return null;
+    }
+    if (!stashed) return null;
+    // A stash from a different file would restore a selection that is not here.
+    return stashed.owner === where.owner && stashed.repo === where.repo &&
+           stashed.ref === where.ref && stashed.path === where.path ? stashed : null;
+  }
+
   async function submitDraft(text) {
     const draft = state && state.draft;
     if (!draft) return;
@@ -214,15 +260,9 @@
       }]);
     }, 'Comment on ' + state.location.path);
 
-    if (ok) {
-      // The page still shows the pre-commit render, so there is no footnote
-      // reference to anchor against yet. Keep the selection range until reload.
-      if (draft.range) state.overrides.set(draft.id, draft.range);
-      state.selectedID = draft.id;
-      state.draft = null;
-      state.notice = 'Comment committed. Reload to see it rendered as a footnote.';
-    }
-    refresh();
+    if (!ok) return refresh();
+    state.draft = null;
+    reloadWith({ selectedID: draft.id, notice: 'Comment added.' });
   }
 
   async function addReply(id, text) {
@@ -232,16 +272,20 @@
       thread.replies.push({ author: state.author, date: new Date(), text: text });
       if (thread.status === 'resolved') thread.status = 'open';
     }, 'Comment on ' + state.location.path);
-    if (ok) state.selectedID = id;
-    refresh();
+    if (!ok) return refresh();
+    reloadWith({ selectedID: id, notice: 'Reply added.' });
   }
 
   async function setStatus(id, status) {
-    await commit(function (next) {
+    const ok = await commit(function (next) {
       const thread = next.threads.find(function (t) { return t.id === id; });
       if (thread) thread.status = status;
     }, (status === 'resolved' ? 'Resolve comment on ' : 'Reopen comment on ') + state.location.path);
-    refresh();
+    if (!ok) return refresh();
+    reloadWith({
+      selectedID: id,
+      notice: status === 'resolved' ? 'Comment resolved.' : 'Comment reopened.'
+    });
   }
 
   async function deleteThread(id) {
@@ -257,11 +301,8 @@
     const ok = await commit(function (next) {
       next.threads = next.threads.filter(function (t) { return t.id !== id; });
     }, 'Delete comment on ' + state.location.path);
-    if (ok) {
-      state.overrides.delete(id);
-      if (state.selectedID === id) state.selectedID = null;
-    }
-    refresh();
+    if (!ok) return refresh();
+    reloadWith({ selectedID: null, notice: 'Comment deleted.' });
   }
 
   // MARK: - Creating a comment from a selection
@@ -368,7 +409,6 @@
       body: '',
       threads: [],
       entries: [],
-      overrides: new Map(),
       selectedID: null,
       draft: null,
       showResolved: false,
@@ -553,7 +593,6 @@
       body: parsed.body,
       threads: parsed.threads,
       entries: [],
-      overrides: new Map(),
       selectedID: null,
       draft: null,
       showResolved: false,
@@ -568,6 +607,14 @@
       // Writing to a detached commit is not a thing; require a branch.
       canWrite: !!(tokenState.hasToken && author) && !SHA_REF.test(where.ref) && !!where.ref
     };
+
+    // Only set when this load is the one a write asked for.
+    const restored = takeStashedViewState(where);
+    if (restored) {
+      const stillHere = state.threads.some(function (t) { return t.id === restored.selectedID; });
+      if (stillHere) state.selectedID = restored.selectedID;
+      state.notice = restored.notice;
+    }
 
     console.info('[mdc-comments] ready', {
       file: where.owner + '/' + where.repo + '@' + where.ref + ':' + where.path,
@@ -594,10 +641,20 @@
       onShowResolved: refresh
     });
 
-    // Remembered preference wins; otherwise open when there is something to see.
+    // A reload we asked for wins, then the remembered preference; otherwise
+    // open when there is something to see.
     const preference = await storedPanelPreference();
-    setPanelOpen(preference === null ? state.threads.length > 0 : preference, false);
+    let open = preference === null ? state.threads.length > 0 : preference;
+    if (restored) open = restored.panelOpen;
+    setPanelOpen(open, false);
     refresh();
+
+    if (restored) {
+      // After the layout shift and the highlights, or it lands in the wrong
+      // place and GitHub's own restoration fights it.
+      requestAnimationFrame(function () { window.scrollTo(0, restored.scrollY); });
+    }
+
     loadProfiles();
     startPolling();
   }
@@ -675,7 +732,6 @@
     state.sha = file.sha;
     state.body = parsed.body;
     state.threads = parsed.threads;
-    state.overrides = new Map();
     if (state.selectedID && !parsed.threads.some(function (t) { return t.id === state.selectedID; })) {
       state.selectedID = null;
     }
