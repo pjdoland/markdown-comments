@@ -187,6 +187,50 @@ test('region sentinels are the agreed literals', () => {
   assert.ok(joined.includes('<!-- mdc-comments-end -->'));
 });
 
+// The version is what lets the next shape change be a migration rather than a
+// break, so it is pinned to its literal the same way the sentinels are.
+test('the data block carries its format version', () => {
+  assert.strictEqual(codec.FORMAT_VERSION, 1);
+  const joined = codec.join(anchoredBody(), [thread()]);
+  assert.ok(joined.includes('{"v":1,"threads":['));
+});
+
+test('one thread per line, so branches conflict per comment', () => {
+  const a = codec.anchorMarkers('aaaaaaaa');
+  const b = codec.anchorMarkers('bbbbbbbb');
+  const body = a.open + 'one' + a.close + ' and ' + b.open + 'two' + b.close;
+  const joined = codec.join(body, [
+    thread({ id: 'aaaaaaaa', anchor: 'one' }),
+    thread({ id: 'bbbbbbbb', anchor: 'two' })
+  ]);
+
+  const block = joined.slice(
+    joined.indexOf('<!-- mdc-comments-data') + '<!-- mdc-comments-data'.length,
+    joined.indexOf('-->', joined.indexOf('<!-- mdc-comments-data'))
+  );
+  const threadLines = block.split('\n').filter(line => line.startsWith('{"anchor"'));
+  assert.strictEqual(threadLines.length, 2);
+  assert.ok(threadLines[0].endsWith(','), 'all but the last thread line ends in a comma');
+  assert.deepStrictEqual(
+    codec.split(joined).threads.map(t => t.id),
+    ['aaaaaaaa', 'bbbbbbbb']
+  );
+});
+
+test('documents written before the version key still open', () => {
+  const joined = codec.join(anchoredBody(), [thread()]);
+  const start = joined.indexOf('{"v":1,"threads":[');
+  const end = joined.indexOf('\n]}', start) + '\n]}'.length;
+  const versioned = joined.slice(start, end);
+  // Exactly what version 0 wrote: the bare array, on one line.
+  const legacy = JSON.stringify(JSON.parse(versioned).threads);
+  const downgraded = joined.slice(0, start) + legacy + joined.slice(end);
+
+  const result = codec.split(downgraded);
+  assert.strictEqual(result.threads.length, 1);
+  assert.strictEqual(result.threads[0].replies[0].text, 'Is "jumps" right here?');
+});
+
 test('JSON block never contains a comment terminator', () => {
   const joined = codec.join(anchoredBody(), [thread({ anchor: 'a --> b', texts: ['c --> d'] })]);
   const start = joined.indexOf('<!-- mdc-comments-data');

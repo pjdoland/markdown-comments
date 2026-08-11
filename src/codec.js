@@ -1,18 +1,19 @@
 /**
  * Reads and writes the on-disk representation of document comments.
  *
- * A Swift implementation of this same format exists and MUST produce
- * byte-identical output. The two edit the same files, so any divergence shows
- * up as spurious diffs and churned commits. Notably:
+ * Output is deterministic, because the whole region is regenerated on every
+ * save and lands in a commit. Anything that varies by machine or by viewer
+ * would rewrite lines nobody edited:
  *
- *   - JSON keys are emitted in sorted order (Swift uses .sortedKeys)
+ *   - JSON keys are emitted in sorted order
  *   - timestamps are seconds-precision ISO 8601, no milliseconds
  *   - display dates are en-US in UTC, never the viewer's locale
  *   - every ">" in the JSON is escaped so the block cannot contain "-->"
+ *   - one thread per line, so two branches adding comments conflict on their
+ *     own lines rather than on the whole block
  *
- * Do not add fields to the wire format here alone. Swift's Codable drops keys
- * it does not know about, so a one-sided addition would be silently discarded
- * the next time that implementation saved the file.
+ * The data block carries a version. Readers accept the current shape and the
+ * unversioned array that preceded it; writers only ever emit the current one.
  */
 (function (root, factory) {
   const api = factory();
@@ -24,6 +25,10 @@
   const BEGIN_SENTINEL = '<!-- mdc-comments-begin -->';
   const END_SENTINEL = '<!-- mdc-comments-end -->';
   const DATA_OPEN = '<!-- mdc-comments-data';
+
+  // Bumped when the shape of the data block changes in a way a previous reader
+  // would misread. Version 0 is the original bare array, still accepted on read.
+  const FORMAT_VERSION = 1;
 
   // MARK: - Reading
 
@@ -173,9 +178,9 @@
   // MARK: - JSON layer
 
   function encodeThreads(threads) {
-    // Key order here is alphabetical on purpose: it matches Swift's .sortedKeys.
-    const wire = threads.map(function (thread) {
-      return {
+    // Key order here is alphabetical on purpose: same input, same bytes.
+    const lines = threads.map(function (thread) {
+      const wire = {
         anchor: thread.anchor,
         id: thread.id,
         replies: (thread.replies || []).map(function (reply) {
@@ -183,11 +188,14 @@
         }),
         status: thread.status || 'open'
       };
+      // The JSON sits inside an HTML comment, so it must not contain "-->".
+      // ">" only ever appears inside string values, and > is an equivalent
+      // JSON escape, so replacing it wholesale is safe.
+      return JSON.stringify(wire).replace(/>/g, '\\u003e');
     });
-    // The JSON sits inside an HTML comment, so it must not contain "-->".
-    // ">" only ever appears inside string values, and > is an equivalent
-    // JSON escape, so replacing it wholesale is safe.
-    return JSON.stringify(wire).replace(/>/g, '\\u003e');
+    // Still one JSON document, just laid out so a thread is a line. Editing one
+    // comment then touches one line of the diff.
+    return '{"v":' + FORMAT_VERSION + ',"threads":[\n' + lines.join(',\n') + '\n]}';
   }
 
   function decodeThreads(region) {
@@ -202,9 +210,13 @@
     } catch (e) {
       return [];
     }
-    if (!Array.isArray(wire)) return [];
+    // Version 1 wraps the threads in an object. Version 0 was the bare array,
+    // and documents written then still have to open.
+    const list = Array.isArray(wire) ? wire
+      : (wire && Array.isArray(wire.threads) ? wire.threads : null);
+    if (!list) return [];
 
-    return wire.map(function (thread) {
+    return list.map(function (thread) {
       return {
         id: String(thread.id || ''),
         status: thread.status === 'resolved' ? 'resolved' : 'open',
@@ -341,6 +353,7 @@
   return {
     BEGIN_SENTINEL: BEGIN_SENTINEL,
     END_SENTINEL: END_SENTINEL,
+    FORMAT_VERSION: FORMAT_VERSION,
     split: split,
     join: join,
     anchorIDs: anchorIDs,

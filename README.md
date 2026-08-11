@@ -76,7 +76,9 @@ Activation rose <!--mdc:a1b2c3d4-->11% against control<!--/mdc:a1b2c3d4-->[^mdc-
 
 <!-- mdc-comments-begin -->
 <!-- mdc-comments-data
-[{"anchor":"11% against control","id":"a1b2c3d4","replies":[...],"status":"open"}]
+{"v":1,"threads":[
+{"anchor":"11% against control","id":"a1b2c3d4","replies":[...],"status":"open"}
+]}
 -->
 
 [^mdc-a1b2c3d4]:
@@ -96,6 +98,12 @@ comment site, and the `@handle` into a real profile link.
 Everything from the begin sentinel onward is regenerated on every save, so the
 visible layer cannot drift from the JSON. A file with no comments is left byte
 for byte alone.
+
+The JSON block carries a version and puts one thread per line. The version means
+the next change to the shape can be a migration rather than a break; the line per
+thread means two branches that each add a comment conflict on their own lines
+instead of on the whole block. Readers still accept the unversioned array that
+came before.
 
 Two rules in the format are load-bearing and easy to get wrong:
 
