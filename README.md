@@ -175,4 +175,7 @@ against real rendered output, so they are checked by hand.
 
 ## License
 
-Not yet licensed. Add a `LICENSE` file before sharing this beyond yourself.
+Copyright (c) 2026 PJ Doland. All rights reserved. See [LICENSE](LICENSE).
+
+The source is readable here, which is not the same as licensed: no permission is
+granted to use, copy, modify, or redistribute it. Ask if you want some.
