@@ -384,10 +384,16 @@ const MDCPanel = (function () {
     const block = el('div', 'mdc-reply');
     const head = el('div', 'mdc-reply-head');
 
-    if (profile && profile.avatar) {
+    // The URL comes from GitHub's user API, but this is the one attribute in
+    // the panel built from a response rather than typed by us, so it is checked
+    // rather than trusted. No avatar is a better outcome than an unknown one.
+    const avatarURL = profile && /^https:\/\//.test(String(profile.avatar || ''))
+      ? profile.avatar
+      : null;
+    if (avatarURL) {
       const avatar = document.createElement('img');
       avatar.className = 'mdc-avatar';
-      avatar.src = profile.avatar + (profile.avatar.indexOf('?') === -1 ? '?s=48' : '&s=48');
+      avatar.src = avatarURL + (avatarURL.indexOf('?') === -1 ? '?s=48' : '&s=48');
       avatar.alt = '';
       avatar.addEventListener('error', function () { avatar.remove(); });
       head.appendChild(avatar);
@@ -402,7 +408,12 @@ const MDCPanel = (function () {
     head.appendChild(stamp);
 
     block.appendChild(head);
-    block.appendChild(el('div', 'mdc-text', reply.text));
+
+    // Replies are written and stored as Markdown, and GitHub renders them as
+    // Markdown in the footnote. Showing them flat here was the odd one out.
+    const body = el('div', 'mdc-text');
+    body.appendChild(MDCMarkdown.render(reply.text));
+    block.appendChild(body);
     return block;
   }
 

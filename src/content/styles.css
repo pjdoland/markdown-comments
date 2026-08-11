@@ -206,7 +206,31 @@ html.mdc-hide-plumbing .mdc-generated { display: none; }
   padding-left: 6px;
   white-space: nowrap;
 }
-.mdc-text { font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* Reply bodies are rendered Markdown, so line breaks are real elements now and
+   pre-wrap would double every blank line. */
+.mdc-text { font-size: 12.5px; line-height: 1.5; overflow-wrap: anywhere; }
+.mdc-text > :first-child { margin-top: 0; }
+.mdc-text > :last-child { margin-bottom: 0; }
+.mdc-text p { margin: 0 0 6px; }
+.mdc-text ul,
+.mdc-text ol { margin: 0 0 6px; padding-left: 18px; }
+.mdc-text li { margin: 1px 0; }
+.mdc-text a { color: var(--mdc-accent); }
+.mdc-text code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 11.5px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--mdc-subtle);
+}
+.mdc-text pre {
+  margin: 0 0 6px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  background: var(--mdc-subtle);
+  overflow-x: auto;
+}
+.mdc-text pre code { padding: 0; background: none; }
 
 .mdc-compose { margin-top: 10px; }
 .mdc-input {
