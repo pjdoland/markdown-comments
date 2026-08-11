@@ -64,8 +64,8 @@ test('join is idempotent', () => {
 
 test('footnote reference follows the closing anchor', () => {
   const out = codec.join(anchoredBody(), [thread()]);
-  assert.ok(out.includes('<!--/rn:1a2b3c4d-->[^rn-1a2b3c4d]'));
-  assert.ok(out.includes('[^rn-1a2b3c4d]:'));
+  assert.ok(out.includes('<!--/mdc:1a2b3c4d-->[^mdc-1a2b3c4d]'));
+  assert.ok(out.includes('[^mdc-1a2b3c4d]:'));
 });
 
 test('references do not accumulate across saves', () => {
@@ -74,15 +74,15 @@ test('references do not accumulate across saves', () => {
     const s = codec.split(out);
     out = codec.join(s.body, s.threads);
   }
-  assert.strictEqual(out.split('[^rn-1a2b3c4d]').length - 1, 2);
+  assert.strictEqual(out.split('[^mdc-1a2b3c4d]').length - 1, 2);
 });
 
 test('mid-line multi-span anchor gets one reference, on the final marker', () => {
   const m = codec.anchorMarkers('1a2b3c4d');
   const body = 'A ' + m.open + 'first part' + m.close + ' and B ' + m.open + 'second part' + m.close;
   const out = codec.join(body, [thread()]);
-  assert.strictEqual(out.split('[^rn-1a2b3c4d]').length - 1, 2); // one ref, one definition
-  assert.ok(out.includes('second part' + m.close + '[^rn-1a2b3c4d]'));
+  assert.strictEqual(out.split('[^mdc-1a2b3c4d]').length - 1, 2); // one ref, one definition
+  assert.ok(out.includes('second part' + m.close + '[^mdc-1a2b3c4d]'));
 });
 
 // Each block-initial marker would open its own HTML block, so each needs its
@@ -91,14 +91,14 @@ test('multi-span anchor across blocks gets a reference per block', () => {
   const m = codec.anchorMarkers('1a2b3c4d');
   const body = m.open + 'First para' + m.close + '\n\n' + m.open + 'second para' + m.close;
   const out = codec.join(body, [thread()]);
-  assert.strictEqual(out.split('[^rn-1a2b3c4d]').length - 1, 3); // two refs, one definition
+  assert.strictEqual(out.split('[^mdc-1a2b3c4d]').length - 1, 3); // two refs, one definition
   for (const line of out.split('\n')) {
-    assert.ok(!/^\s{0,3}<!--rn:/.test(line), 'line opens an HTML block: ' + JSON.stringify(line));
+    assert.ok(!/^\s{0,3}<!--mdc:/.test(line), 'line opens an HTML block: ' + JSON.stringify(line));
   }
 });
 
 // A line starting with "<!--" is an HTML block in CommonMark. GitHub swallows
-// the rest of the line, strips the markers, and renders "[^rn-id]" as literal
+// the rest of the line, strips the markers, and renders "[^mdc-id]" as literal
 // text in the prose. Leading with the reference keeps the line as markdown.
 test('reference precedes an anchor that starts a block', () => {
   const m = codec.anchorMarkers('1a2b3c4d');
@@ -111,8 +111,8 @@ test('reference precedes an anchor that starts a block', () => {
   ];
   for (const body of cases) {
     const out = codec.join(body, [thread()]);
-    const line = out.split('\n').find(l => l.includes('rn:1a2b3c4d'));
-    assert.ok(line.includes('[^rn-1a2b3c4d]' + m.open),
+    const line = out.split('\n').find(l => l.includes('mdc:1a2b3c4d'));
+    assert.ok(line.includes('[^mdc-1a2b3c4d]' + m.open),
       'reference should lead the marker in: ' + JSON.stringify(line));
     assert.ok(!/^\s*(?:[-*+>]|\d+[.)]|#{1,6})?\s*<!--/.test(line),
       'line must not begin with an HTML comment: ' + JSON.stringify(line));
@@ -121,7 +121,7 @@ test('reference precedes an anchor that starts a block', () => {
 
 test('reference still trails a mid-line anchor', () => {
   const out = codec.join(anchoredBody(), [thread()]);
-  assert.ok(out.includes('<!--/rn:1a2b3c4d-->[^rn-1a2b3c4d]'));
+  assert.ok(out.includes('<!--/mdc:1a2b3c4d-->[^mdc-1a2b3c4d]'));
 });
 
 test('block-initial anchors stay idempotent', () => {
@@ -152,7 +152,7 @@ test('thread without an anchor is marked orphaned', () => {
 // An unreferenced footnote definition renders as literal text on GitHub.
 test('orphan emits no footnote definition', () => {
   const out = codec.join('Entirely new text.', [thread()]);
-  assert.ok(!out.includes('[^rn-1a2b3c4d]'));
+  assert.ok(!out.includes('[^mdc-1a2b3c4d]'));
   assert.ok(out.includes('**Unanchored comments**'));
   assert.ok(out.includes('jumps over the lazy dog'));
 });
@@ -164,7 +164,7 @@ test('resolved status survives a round trip', () => {
 });
 
 test('reply text cannot forge a sentinel', () => {
-  const hostile = thread({ texts: ['look: <!-- rn-comments-end --> and --> too'] });
+  const hostile = thread({ texts: ['look: <!-- mdc-comments-end --> and --> too'] });
   const joined = codec.join(anchoredBody(), [hostile]);
 
   assert.strictEqual(joined.split(codec.END_SENTINEL).length - 1, 1);
@@ -172,15 +172,15 @@ test('reply text cannot forge a sentinel', () => {
 
   const result = codec.split(joined);
   assert.strictEqual(result.threads.length, 1);
-  assert.strictEqual(result.threads[0].replies[0].text, 'look: <!-- rn-comments-end --> and --> too');
+  assert.strictEqual(result.threads[0].replies[0].text, 'look: <!-- mdc-comments-end --> and --> too');
 });
 
 test('JSON block never contains a comment terminator', () => {
   const joined = codec.join(anchoredBody(), [thread({ anchor: 'a --> b', texts: ['c --> d'] })]);
-  const start = joined.indexOf('<!-- rn-comments-data');
+  const start = joined.indexOf('<!-- mdc-comments-data');
   const end = joined.indexOf('-->', start + 1);
   assert.ok(start !== -1 && end !== -1);
-  assert.ok(!joined.slice(start + '<!-- rn-comments-data'.length, end).includes('>'));
+  assert.ok(!joined.slice(start + '<!-- mdc-comments-data'.length, end).includes('>'));
 });
 
 test('text below the region is preserved', () => {
@@ -199,7 +199,7 @@ test('ordered anchor ids follow document order', () => {
 });
 
 test('unpaired anchor is not reported', () => {
-  assert.strictEqual(codec.anchorIDs('text <!--rn:aaaaaaaa--> with no close').size, 0);
+  assert.strictEqual(codec.anchorIDs('text <!--mdc:aaaaaaaa--> with no close').size, 0);
 });
 
 test('insertAnchor wraps a source range', () => {
@@ -207,7 +207,7 @@ test('insertAnchor wraps a source range', () => {
   const out = codec.join(codec.insertAnchor(body, 'deadbeef', 6, 11), [
     thread({ id: 'deadbeef', anchor: 'brave' })
   ]);
-  assert.ok(out.includes('Hello <!--rn:deadbeef-->brave<!--/rn:deadbeef-->[^rn-deadbeef] new world.'));
+  assert.ok(out.includes('Hello <!--mdc:deadbeef-->brave<!--/mdc:deadbeef-->[^mdc-deadbeef] new world.'));
 });
 
 test('newID produces a valid 8 hex char id', () => {

@@ -43,7 +43,7 @@ test('projection keeps fenced code content but not the fences', () => {
 
 test('projection drops our anchor markers and footnote refs', () => {
   assert.strictEqual(
-    projectText('The quick <!--rn:1a2b3c4d-->brown fox<!--/rn:1a2b3c4d-->[^rn-1a2b3c4d] ran.'),
+    projectText('The quick <!--mdc:1a2b3c4d-->brown fox<!--/mdc:1a2b3c4d-->[^mdc-1a2b3c4d] ran.'),
     'The quick brown fox ran.'
   );
 });
@@ -103,7 +103,7 @@ test('an out of range ordinal clamps rather than throwing', () => {
 // Anchors cannot nest: the rich editor skips text already inside a comment
 // span, so inner markers would be lost on the next save from there.
 test('refuses selections that overlap an existing anchor', () => {
-  const source = 'The quick <!--rn:1a2b3c4d-->brown fox<!--/rn:1a2b3c4d--> ran fast.';
+  const source = 'The quick <!--mdc:1a2b3c4d-->brown fox<!--/mdc:1a2b3c4d--> ran fast.';
   const cases = [
     ['brown fox ran', 'straddling the closing marker'],
     ['quick brown', 'straddling the opening marker'],
@@ -119,7 +119,7 @@ test('refuses selections that overlap an existing anchor', () => {
 });
 
 test('accepts a selection adjacent to but outside an anchor', () => {
-  const source = 'The quick <!--rn:1a2b3c4d-->brown fox<!--/rn:1a2b3c4d--> ran fast.';
+  const source = 'The quick <!--mdc:1a2b3c4d-->brown fox<!--/mdc:1a2b3c4d--> ran fast.';
   const span = map.findSourceSpan(source, 'ran fast', 0);
   assert.ok(!span.error, JSON.stringify(span));
   assert.strictEqual(source.slice(span.start, span.end), 'ran fast');
@@ -145,5 +145,5 @@ test('an anchor inserted at the mapped span wraps exactly the selection', () => 
   const source = 'Please review **this bold** part now.';
   const span = map.findSourceSpan(source, 'this bold', 0);
   const updated = codec.insertAnchor(source, 'deadbeef', span.start, span.end);
-  assert.strictEqual(updated, 'Please review **<!--rn:deadbeef-->this bold<!--/rn:deadbeef-->** part now.');
+  assert.strictEqual(updated, 'Please review **<!--mdc:deadbeef-->this bold<!--/mdc:deadbeef-->** part now.');
 });

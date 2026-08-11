@@ -11,7 +11,7 @@
  * rather than guessed at. Anchoring the wrong span would be worse than
  * declining to anchor at all.
  */
-const RNSourceMap = (function () {
+const MDCSourceMap = (function () {
   'use strict';
 
   function normalize(value) {
@@ -20,7 +20,7 @@ const RNSourceMap = (function () {
 
   /**
    * Projects markdown to plain text with an index back to source offsets.
-   * Whitespace is collapsed exactly as RNAnchor.buildTextIndex collapses it in
+   * Whitespace is collapsed exactly as MDCAnchor.buildTextIndex collapses it in
    * the DOM, so the two strings are directly comparable.
    */
   function project(source) {
@@ -207,7 +207,7 @@ const RNSourceMap = (function () {
   function anchorRegions(source) {
     const regions = [];
     const open = new Map();
-    for (const match of source.matchAll(/<!--(\/?)rn:([0-9a-f]{8})-->/g)) {
+    for (const match of source.matchAll(/<!--(\/?)mdc:([0-9a-f]{8})-->/g)) {
       const id = match[2];
       if (match[1] !== '/') {
         if (!open.has(id)) open.set(id, match.index);
@@ -232,7 +232,7 @@ const RNSourceMap = (function () {
   function selectionOrdinal(root, range, needle) {
     const target = normalize(needle);
     if (!target) return 0;
-    const index = RNAnchor.buildTextIndex(root, null);
+    const index = MDCAnchor.buildTextIndex(root, null);
 
     let startOffset = -1;
     for (let i = 0; i < index.positions.length; i++) {
@@ -306,4 +306,4 @@ const RNSourceMap = (function () {
   };
 })();
 
-if (typeof module === 'object' && module.exports) module.exports = RNSourceMap;
+if (typeof module === 'object' && module.exports) module.exports = MDCSourceMap;

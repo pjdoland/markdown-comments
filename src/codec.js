@@ -17,13 +17,13 @@
 (function (root, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
-  else root.RNCodec = api;
+  else root.MDCCodec = api;
 })(typeof self !== 'undefined' ? self : globalThis, function () {
   'use strict';
 
-  const BEGIN_SENTINEL = '<!-- rn-comments-begin -->';
-  const END_SENTINEL = '<!-- rn-comments-end -->';
-  const DATA_OPEN = '<!-- rn-comments-data';
+  const BEGIN_SENTINEL = '<!-- mdc-comments-begin -->';
+  const END_SENTINEL = '<!-- mdc-comments-end -->';
+  const DATA_OPEN = '<!-- mdc-comments-data';
 
   // MARK: - Reading
 
@@ -57,8 +57,8 @@
 
   /** The ids of every complete anchor pair in a body. */
   function anchorIDs(body) {
-    const opens = capturedIDs(body, /<!--rn:([0-9a-f]{8})-->/g);
-    const closes = capturedIDs(body, /<!--\/rn:([0-9a-f]{8})-->/g);
+    const opens = capturedIDs(body, /<!--mdc:([0-9a-f]{8})-->/g);
+    const closes = capturedIDs(body, /<!--\/mdc:([0-9a-f]{8})-->/g);
     const both = new Set();
     for (const id of opens) if (closes.has(id)) both.add(id);
     return both;
@@ -69,7 +69,7 @@
     const complete = anchorIDs(body);
     const seen = new Set();
     const ordered = [];
-    for (const match of body.matchAll(/<!--rn:([0-9a-f]{8})-->/g)) {
+    for (const match of body.matchAll(/<!--mdc:([0-9a-f]{8})-->/g)) {
       const id = match[1];
       if (complete.has(id) && !seen.has(id)) {
         seen.add(id);
@@ -116,7 +116,7 @@
   }
 
   function anchorMarkers(id) {
-    return { open: '<!--rn:' + id + '-->', close: '<!--/rn:' + id + '-->' };
+    return { open: '<!--mdc:' + id + '-->', close: '<!--/mdc:' + id + '-->' };
   }
 
   /** Wraps [start, end) of a raw markdown body in a new anchor pair. */
@@ -137,7 +137,7 @@
   // MARK: - Visible layer
 
   function footnoteLines(thread) {
-    const lines = ['[^rn-' + thread.id + ']:'];
+    const lines = ['[^mdc-' + thread.id + ']:'];
     (thread.replies || []).forEach(function (reply, index) {
       if (index > 0) lines.push('');
       const marker = index === 0 && thread.status === 'resolved' ? '_(resolved)_ ' : '';
@@ -225,15 +225,15 @@
   // MARK: - Anchor and reference plumbing
 
   function stripFootnoteRefs(body) {
-    return body.replace(/\[\^rn-[0-9a-f]{8}\]/g, '');
+    return body.replace(/\[\^mdc-[0-9a-f]{8}\]/g, '');
   }
 
   function collapseAnchorSeams(body) {
-    return body.replace(/<!--\/rn:([0-9a-f]{8})--><!--rn:\1-->/g, '');
+    return body.replace(/<!--\/mdc:([0-9a-f]{8})--><!--mdc:\1-->/g, '');
   }
 
   function dropAnchorsNotIn(body, known) {
-    return body.replace(/<!--\/?rn:([0-9a-f]{8})-->/g, function (match, id) {
+    return body.replace(/<!--\/?mdc:([0-9a-f]{8})-->/g, function (match, id) {
       return known.has(id) ? match : '';
     });
   }
@@ -256,13 +256,13 @@
    * commented phrase. When the opening marker is the first thing on its line
    * the reference goes before it instead: in CommonMark a line beginning with
    * "<!--" starts an HTML block, which swallows the rest of the line, strips
-   * the markers, and leaves "[^rn-ID]" rendered as literal text on GitHub.
+   * the markers, and leaves "[^mdc-ID]" rendered as literal text on GitHub.
    * Leading with "[" keeps the line ordinary markdown.
    */
   function insertFootnoteRefs(body, ids) {
     const blockInitial = new Map(); // id -> [offset]
     const seen = new Set();
-    for (const match of body.matchAll(/<!--rn:([0-9a-f]{8})-->/g)) {
+    for (const match of body.matchAll(/<!--mdc:([0-9a-f]{8})-->/g)) {
       const id = match[1];
       if (!ids.has(id)) continue;
       seen.add(id);
@@ -271,7 +271,7 @@
       blockInitial.get(id).push(match.index);
     }
     const lastEnd = new Map();
-    for (const match of body.matchAll(/<!--\/rn:([0-9a-f]{8})-->/g)) {
+    for (const match of body.matchAll(/<!--\/mdc:([0-9a-f]{8})-->/g)) {
       if (!ids.has(match[1])) continue;
       lastEnd.set(match[1], match.index + match[0].length);
     }
@@ -283,9 +283,9 @@
         // Every such marker would open an HTML block, so each needs a
         // reference in front of it. GFM allows one footnote to be referenced
         // more than once and renders a backlink per reference.
-        for (const offset of starts) insertions.push([offset, '[^rn-' + id + ']']);
+        for (const offset of starts) insertions.push([offset, '[^mdc-' + id + ']']);
       } else if (lastEnd.has(id)) {
-        insertions.push([lastEnd.get(id), '[^rn-' + id + ']']);
+        insertions.push([lastEnd.get(id), '[^mdc-' + id + ']']);
       }
     }
     if (!insertions.length) return body;

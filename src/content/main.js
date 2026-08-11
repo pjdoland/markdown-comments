@@ -123,7 +123,7 @@
   function buildEntries(root) {
     const entries = state.threads.map(function (thread) {
       let range = state.overrides.get(thread.id) || null;
-      if (!range && !thread.isOrphaned) range = RNAnchor.locate(root, thread);
+      if (!range && !thread.isOrphaned) range = MDCAnchor.locate(root, thread);
       return { id: thread.id, thread: thread, range: range };
     });
     entries.sort(function (a, b) {
@@ -143,8 +143,10 @@
     const root = markdownBody();
     if (!state || !root) return;
     state.entries = buildEntries(root);
-    RNAnchor.applyHighlights(state.entries, state.selectedID);
-    RNPanel.render(state);
+    MDCAnchor.applyHighlights(state.entries, state.selectedID);
+    MDCAnchor.markGeneratedRegion(root);
+    applyPlumbingVisibility(MDCPanel.isOpen());
+    MDCPanel.render(state);
   }
 
   function selectThread(id) {
@@ -153,8 +155,8 @@
     refresh();
     if (id) {
       const entry = state.entries.find(function (e) { return e.id === id; });
-      RNAnchor.scrollTo(entry);
-      RNPanel.scrollCardIntoView(id);
+      MDCAnchor.scrollTo(entry);
+      MDCPanel.scrollCardIntoView(id);
     }
   }
 
@@ -165,12 +167,12 @@
 
     const next = { body: state.body, threads: state.threads.map(cloneThread) };
     mutate(next);
-    const text = RNCodec.join(next.body, next.threads);
+    const text = MDCCodec.join(next.body, next.threads);
 
     state.busy = 'Saving to GitHub...';
     state.error = null;
     state.notice = null;
-    RNPanel.render(state);
+    MDCPanel.render(state);
 
     try {
       const result = await send({
@@ -184,7 +186,7 @@
         message: message
       });
       state.sha = result.sha;
-      const reparsed = RNCodec.split(text);
+      const reparsed = MDCCodec.split(text);
       state.body = reparsed.body;
       state.threads = reparsed.threads;
       state.busy = null;
@@ -203,7 +205,7 @@
     if (!draft) return;
 
     const ok = await commit(function (next) {
-      next.body = RNCodec.insertAnchor(next.body, draft.id, draft.start, draft.end);
+      next.body = MDCCodec.insertAnchor(next.body, draft.id, draft.start, draft.end);
       next.threads = next.threads.concat([{
         id: draft.id,
         status: 'open',
@@ -281,7 +283,7 @@
         state.error = 'Cannot write to this file with the saved token.';
       }
       setPanelOpen(true, true);
-      RNPanel.render(state);
+      MDCPanel.render(state);
       return;
     }
     if (!selection || !selection.rangeCount || selection.isCollapsed) return;
@@ -289,11 +291,11 @@
     const range = selection.getRangeAt(0);
     if (!root.contains(range.commonAncestorContainer)) return;
 
-    const text = RNAnchor.normalizeWhitespace(range.toString());
+    const text = MDCAnchor.normalizeWhitespace(range.toString());
     if (!text) return;
 
-    const ordinal = RNSourceMap.selectionOrdinal(root, range, text);
-    const span = RNSourceMap.findSourceSpan(state.body, text, ordinal);
+    const ordinal = MDCSourceMap.selectionOrdinal(root, range, text);
+    const span = MDCSourceMap.findSourceSpan(state.body, text, ordinal);
 
     setPanelOpen(true, true);
     if (span.error) {
@@ -306,7 +308,7 @@
     state.error = null;
     state.selectedID = null;
     state.draft = {
-      id: RNCodec.newID(),
+      id: MDCCodec.newID(),
       anchor: text,
       start: span.start,
       end: span.end,
@@ -318,8 +320,8 @@
   function ensureSelectionButton() {
     if (selectionButton) return selectionButton;
     selectionButton = document.createElement('button');
-    selectionButton.className = 'rn-selection-button';
-    selectionButton.setAttribute('data-rn-ui', 'selection');
+    selectionButton.className = 'mdc-selection-button';
+    selectionButton.setAttribute('data-mdc-ui', 'selection');
     selectionButton.textContent = 'Comment';
     selectionButton.hidden = true;
     // mousedown would collapse the selection before the click lands.
@@ -382,11 +384,11 @@
       // boot() from ever retrying, so adding a token would not repair the tab.
       failed: true
     };
-    RNPanel.mount({
+    MDCPanel.mount({
       onOpenOptions: function () { send({ type: 'openOptions' }).catch(function () {}); },
       onRetry: retry
     });
-    RNPanel.render(state);
+    MDCPanel.render(state);
   }
 
   function retry() {
@@ -405,22 +407,34 @@
    */
   function applyLayoutShift(open) {
     const root = document.documentElement;
-    root.style.setProperty('--rn-panel-width', PANEL_WIDTH + 'px');
+    root.style.setProperty('--mdc-panel-width', PANEL_WIDTH + 'px');
     if (open) root.style.setProperty('margin-right', PANEL_WIDTH + 'px', 'important');
     else root.style.removeProperty('margin-right');
   }
 
   function setPanelOpen(open, persist) {
-    RNPanel.setOpen(open);
+    MDCPanel.setOpen(open);
     applyLayoutShift(open);
+    applyPlumbingVisibility(open);
     if (persist !== false) {
       try { chrome.storage.local.set({ panelOpen: !!open }); } catch (e) { /* ignore */ }
     }
   }
 
+  /**
+   * Hides the footnote superscripts and the footnote list while the panel is
+   * presenting the same comments, so the document reads as prose. Only done
+   * once threads actually loaded: with nothing to show in their place, GitHub's
+   * own rendering is the only way to read the discussion.
+   */
+  function applyPlumbingVisibility(open) {
+    const hide = !!open && !!state && !state.failed && state.threads.length > 0;
+    document.documentElement.classList.toggle('mdc-hide-plumbing', hide);
+  }
+
   function togglePanel() {
     if (!state) return;
-    setPanelOpen(!RNPanel.isOpen(), true);
+    setPanelOpen(!MDCPanel.isOpen(), true);
   }
 
   async function storedPanelPreference() {
@@ -504,7 +518,7 @@
       where = Object.assign({}, where, { path: file.path, ref: file.ref || where.ref });
     }
 
-    const parsed = RNCodec.split(file.text);
+    const parsed = MDCCodec.split(file.text);
     let author = null;
     let authError = null;
     if (tokenState.hasToken) {
@@ -540,7 +554,7 @@
       canWrite: !!(tokenState.hasToken && author) && !SHA_REF.test(where.ref) && !!where.ref
     };
 
-    console.info('[rn-comments] ready', {
+    console.info('[mdc-comments] ready', {
       file: where.owner + '/' + where.repo + '@' + where.ref + ':' + where.path,
       threads: state.threads.length,
       hasToken: state.hasToken,
@@ -549,7 +563,7 @@
       canWrite: state.canWrite
     });
 
-    RNPanel.mount({
+    MDCPanel.mount({
       onSelect: selectThread,
       onReply: addReply,
       onSetStatus: setStatus,
@@ -574,9 +588,10 @@
 
   function teardown() {
     stopPolling();
-    RNAnchor.clearHighlights();
-    RNPanel.destroy();
+    MDCAnchor.clearHighlights();
+    MDCPanel.destroy();
     applyLayoutShift(false);
+    document.documentElement.classList.remove('mdc-hide-plumbing');
     if (selectionButton) selectionButton.hidden = true;
     state = null;
   }
@@ -602,7 +617,7 @@
     if (!state) return false;
     if (state.draft) return true;
     if (state.busy) return true;
-    const fields = document.querySelectorAll('.rn-panel textarea');
+    const fields = document.querySelectorAll('.mdc-panel textarea');
     for (const field of fields) {
       if (field.value && field.value.trim()) return true;
     }
@@ -627,7 +642,7 @@
     }
     if (!state || file.notModified || file.sha === state.sha) return;
 
-    const parsed = RNCodec.split(file.text);
+    const parsed = MDCCodec.split(file.text);
     const known = new Set(state.threads.map(function (t) { return t.id; }));
     const arrived = parsed.threads.filter(function (t) { return !known.has(t.id); }).length;
 
@@ -637,7 +652,7 @@
         ? arrived + (arrived === 1 ? ' new comment' : ' new comments') +
           ' arrived. Finish or cancel what you are writing to load them.'
         : 'This file changed on GitHub. Finish or cancel what you are writing to load it.';
-      RNPanel.render(state);
+      MDCPanel.render(state);
       return;
     }
 
@@ -666,11 +681,11 @@
 
   document.addEventListener('click', function (event) {
     if (!state) return;
-    if (event.target.closest && event.target.closest('[data-rn-ui]')) return;
+    if (event.target.closest && event.target.closest('[data-mdc-ui]')) return;
     const root = markdownBody();
     if (!root || !root.contains(event.target)) return;
 
-    const id = RNAnchor.threadAtPoint(state.entries, event.clientX, event.clientY);
+    const id = MDCAnchor.threadAtPoint(state.entries, event.clientX, event.clientY);
     if (id) {
       setPanelOpen(true, true);
       selectThread(id);

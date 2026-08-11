@@ -6,7 +6,7 @@
  * is preserved across renders by keying it to the thread id, and focus is
  * restored afterwards so typing is never interrupted.
  */
-const RNPanel = (function () {
+const MDCPanel = (function () {
   'use strict';
 
   let root = null;
@@ -60,33 +60,33 @@ const RNPanel = (function () {
     handlers = callbacks || {};
     if (root) return;
 
-    root = el('div', 'rn-panel');
-    root.setAttribute('data-rn-ui', 'panel');
+    root = el('div', 'mdc-panel');
+    root.setAttribute('data-mdc-ui', 'panel');
     root.hidden = true;
 
-    const header = el('div', 'rn-header');
-    header.appendChild(el('span', 'rn-title', 'Comments'));
-    countEl = el('span', 'rn-count');
+    const header = el('div', 'mdc-header');
+    header.appendChild(el('span', 'mdc-title', 'Comments'));
+    countEl = el('span', 'mdc-count');
     countEl.hidden = true;
     header.appendChild(countEl);
-    header.appendChild(el('div', 'rn-spacer'));
+    header.appendChild(el('div', 'mdc-spacer'));
 
-    const close = el('button', 'rn-icon-button', '×');
+    const close = el('button', 'mdc-icon-button', '×');
     close.title = 'Hide comments (Alt+C)';
     close.setAttribute('aria-label', 'Hide comments');
     close.addEventListener('click', function () { requestOpen(false); });
     header.appendChild(close);
     root.appendChild(header);
 
-    bannerEl = el('div', 'rn-banner');
+    bannerEl = el('div', 'mdc-banner');
     bannerEl.hidden = true;
     root.appendChild(bannerEl);
 
-    listEl = el('div', 'rn-list');
+    listEl = el('div', 'mdc-list');
     root.appendChild(listEl);
 
-    toggle = el('button', 'rn-toggle');
-    toggle.setAttribute('data-rn-ui', 'toggle');
+    toggle = el('button', 'mdc-toggle');
+    toggle.setAttribute('data-mdc-ui', 'toggle');
     toggle.title = 'Show comments (Alt+C)';
     toggle.hidden = true;
     toggle.addEventListener('click', function () { requestOpen(true); });
@@ -128,7 +128,7 @@ const RNPanel = (function () {
     const active = document.activeElement;
     if (!active || !root || !root.contains(active)) return null;
     return {
-      key: active.getAttribute('data-rn-field'),
+      key: active.getAttribute('data-mdc-field'),
       start: active.selectionStart,
       end: active.selectionEnd
     };
@@ -136,7 +136,7 @@ const RNPanel = (function () {
 
   function restoreFocus(snapshot) {
     if (!snapshot || !snapshot.key || !root) return;
-    const field = root.querySelector('[data-rn-field="' + CSS.escape(snapshot.key) + '"]');
+    const field = root.querySelector('[data-mdc-field="' + CSS.escape(snapshot.key) + '"]');
     if (!field) return;
     field.focus();
     try { field.setSelectionRange(snapshot.start, snapshot.end); } catch (e) { /* not selectable */ }
@@ -170,7 +170,7 @@ const RNPanel = (function () {
     for (const entry of open) listEl.appendChild(threadCard(entry, state));
 
     if (resolved.length) {
-      const header = el('button', 'rn-button', resolved.length + ' resolved');
+      const header = el('button', 'mdc-button', resolved.length + ' resolved');
       header.style.alignSelf = 'flex-start';
       header.addEventListener('click', function () {
         state.showResolved = !state.showResolved;
@@ -183,7 +183,7 @@ const RNPanel = (function () {
     }
 
     if (!ordered.length && !state.draft && !state.error) {
-      listEl.appendChild(el('div', 'rn-empty',
+      listEl.appendChild(el('div', 'mdc-empty',
         state.canWrite
           ? 'No comments on ' + (state.location ? state.location.path : 'this file') +
             ' yet.\n\nSelect some text in the document and a Comment button will appear.'
@@ -196,17 +196,17 @@ const RNPanel = (function () {
   function renderBanner(state) {
     bannerEl.textContent = '';
     bannerEl.hidden = true;
-    bannerEl.className = 'rn-banner';
+    bannerEl.className = 'mdc-banner';
 
     if (state.busy) {
       bannerEl.hidden = false;
-      bannerEl.classList.add('rn-busy');
+      bannerEl.classList.add('mdc-busy');
       bannerEl.textContent = state.busy;
       return;
     }
     if (state.error) {
       bannerEl.hidden = false;
-      bannerEl.classList.add('rn-error');
+      bannerEl.classList.add('mdc-error');
       bannerEl.appendChild(document.createTextNode(state.error + ' '));
       if (handlers.onOpenOptions) {
         const options = document.createElement('a');
@@ -225,13 +225,13 @@ const RNPanel = (function () {
     }
     if (state.notice) {
       bannerEl.hidden = false;
-      bannerEl.classList.add('rn-info');
+      bannerEl.classList.add('mdc-info');
       bannerEl.textContent = state.notice;
       return;
     }
     if (!state.canWrite) {
       bannerEl.hidden = false;
-      bannerEl.classList.add('rn-info');
+      bannerEl.classList.add('mdc-info');
       bannerEl.appendChild(document.createTextNode('Read only. '));
       const link = document.createElement('a');
       link.textContent = 'Add a token';
@@ -244,23 +244,23 @@ const RNPanel = (function () {
   }
 
   function quote(text, isOrphan) {
-    const wrap = el('div', 'rn-quote' + (isOrphan ? ' rn-orphan' : ''));
-    wrap.appendChild(el('div', 'rn-quote-bar'));
-    const body = el('div', 'rn-quote-text', text);
+    const wrap = el('div', 'mdc-quote' + (isOrphan ? ' mdc-orphan' : ''));
+    wrap.appendChild(el('div', 'mdc-quote-bar'));
+    const body = el('div', 'mdc-quote-text', text);
     if (isOrphan) {
-      body.appendChild(el('span', 'rn-orphan-note', 'This text is no longer in the document'));
+      body.appendChild(el('span', 'mdc-orphan-note', 'This text is no longer in the document'));
     }
     wrap.appendChild(body);
     return wrap;
   }
 
   function draftCard(draft) {
-    const card = el('div', 'rn-card rn-draft');
+    const card = el('div', 'mdc-card mdc-draft');
     card.appendChild(quote(draft.anchor, false));
 
-    const input = el('textarea', 'rn-input');
+    const input = el('textarea', 'mdc-input');
     input.placeholder = 'Add a comment...';
-    input.setAttribute('data-rn-field', 'draft');
+    input.setAttribute('data-mdc-field', 'draft');
     input.value = pendingText.draft || '';
     input.addEventListener('input', function () { pendingText.draft = input.value; });
     input.addEventListener('keydown', function (event) {
@@ -275,14 +275,14 @@ const RNPanel = (function () {
     });
     card.appendChild(input);
 
-    const actions = el('div', 'rn-actions');
-    actions.appendChild(el('div', 'rn-spacer'));
+    const actions = el('div', 'mdc-actions');
+    actions.appendChild(el('div', 'mdc-spacer'));
 
-    const cancel = el('button', 'rn-button', 'Cancel');
+    const cancel = el('button', 'mdc-button', 'Cancel');
     cancel.addEventListener('click', cancelDraft);
     actions.appendChild(cancel);
 
-    const submit = el('button', 'rn-button rn-primary', 'Comment');
+    const submit = el('button', 'mdc-button mdc-primary', 'Comment');
     submit.addEventListener('click', function () { submitDraft(input.value); });
     actions.appendChild(submit);
 
@@ -306,9 +306,9 @@ const RNPanel = (function () {
   function threadCard(entry, state) {
     const thread = entry.thread;
     const selected = state.selectedID === thread.id;
-    const card = el('div', 'rn-card' +
-      (selected ? ' rn-selected' : '') +
-      (thread.status === 'resolved' ? ' rn-done' : ''));
+    const card = el('div', 'mdc-card' +
+      (selected ? ' mdc-selected' : '') +
+      (thread.status === 'resolved' ? ' mdc-done' : ''));
 
     card.appendChild(quote(thread.anchor, thread.isOrphaned || !entry.range));
 
@@ -317,11 +317,11 @@ const RNPanel = (function () {
     }
 
     if (selected && state.canWrite) {
-      const compose = el('div', 'rn-compose');
+      const compose = el('div', 'mdc-compose');
       const key = 'reply:' + thread.id;
-      const input = el('textarea', 'rn-input');
+      const input = el('textarea', 'mdc-input');
       input.placeholder = thread.status === 'resolved' ? 'Reopen with a reply...' : 'Reply...';
-      input.setAttribute('data-rn-field', key);
+      input.setAttribute('data-mdc-field', key);
       input.value = pendingText[key] || '';
       input.addEventListener('input', function () { pendingText[key] = input.value; });
       input.addEventListener('click', function (event) { event.stopPropagation(); });
@@ -333,16 +333,16 @@ const RNPanel = (function () {
       });
       compose.appendChild(input);
 
-      const actions = el('div', 'rn-actions');
+      const actions = el('div', 'mdc-actions');
 
-      const reply = el('button', 'rn-button rn-primary', 'Reply');
+      const reply = el('button', 'mdc-button mdc-primary', 'Reply');
       reply.addEventListener('click', function (event) {
         event.stopPropagation();
         sendReply(thread.id, input.value);
       });
       actions.appendChild(reply);
 
-      const resolve = el('button', 'rn-button', thread.status === 'resolved' ? 'Reopen' : 'Resolve');
+      const resolve = el('button', 'mdc-button', thread.status === 'resolved' ? 'Reopen' : 'Resolve');
       resolve.addEventListener('click', function (event) {
         event.stopPropagation();
         if (handlers.onSetStatus) {
@@ -351,9 +351,9 @@ const RNPanel = (function () {
       });
       actions.appendChild(resolve);
 
-      actions.appendChild(el('div', 'rn-spacer'));
+      actions.appendChild(el('div', 'mdc-spacer'));
 
-      const remove = el('button', 'rn-button rn-danger', 'Delete');
+      const remove = el('button', 'mdc-button mdc-danger', 'Delete');
       remove.addEventListener('click', function (event) {
         event.stopPropagation();
         if (handlers.onDelete) handlers.onDelete(thread.id);
@@ -377,28 +377,28 @@ const RNPanel = (function () {
    */
   function replyBlock(reply, state) {
     const profile = (state.profiles || {})[reply.author] || null;
-    const block = el('div', 'rn-reply');
-    const head = el('div', 'rn-reply-head');
+    const block = el('div', 'mdc-reply');
+    const head = el('div', 'mdc-reply-head');
 
     if (profile && profile.avatar) {
       const avatar = document.createElement('img');
-      avatar.className = 'rn-avatar';
+      avatar.className = 'mdc-avatar';
       avatar.src = profile.avatar + (profile.avatar.indexOf('?') === -1 ? '?s=48' : '&s=48');
       avatar.alt = '';
       avatar.addEventListener('error', function () { avatar.remove(); });
       head.appendChild(avatar);
     }
 
-    const name = el('span', 'rn-author', profile && profile.name ? profile.name : '@' + reply.author);
+    const name = el('span', 'mdc-author', profile && profile.name ? profile.name : '@' + reply.author);
     name.title = '@' + reply.author;
     head.appendChild(name);
 
-    const stamp = el('span', 'rn-date', shortTimestamp(reply.date));
+    const stamp = el('span', 'mdc-date', shortTimestamp(reply.date));
     stamp.title = fullTimestamp(reply.date);
     head.appendChild(stamp);
 
     block.appendChild(head);
-    block.appendChild(el('div', 'rn-text', reply.text));
+    block.appendChild(el('div', 'mdc-text', reply.text));
     return block;
   }
 
@@ -411,7 +411,7 @@ const RNPanel = (function () {
 
   function scrollCardIntoView(id) {
     if (!root || root.hidden) return;
-    const cards = listEl.querySelectorAll('.rn-card.rn-selected');
+    const cards = listEl.querySelectorAll('.mdc-card.mdc-selected');
     if (cards.length) cards[0].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
 

@@ -12,7 +12,7 @@
  * spans. GitHub's blob view is a React tree, and injected elements inside it
  * get clobbered on re-render. Highlights live outside the DOM entirely.
  */
-const RNAnchor = (function () {
+const MDCAnchor = (function () {
   'use strict';
 
   function normalizeWhitespace(value) {
@@ -26,7 +26,7 @@ const RNAnchor = (function () {
   function isSkippable(node) {
     let el = node.parentElement;
     while (el) {
-      if (el.matches('[data-footnote-ref], .footnotes, [data-rn-ui], .anchor')) return true;
+      if (el.matches('[data-footnote-ref], .footnotes, [data-mdc-ui], .anchor')) return true;
       if (el.classList && el.classList.contains('markdown-body')) return false;
       el = el.parentElement;
     }
@@ -104,7 +104,7 @@ const RNAnchor = (function () {
 
   /** The footnote reference element GitHub rendered for a thread, if present. */
   function referenceFor(root, id) {
-    const ref = root.querySelector('[id^="user-content-fnref-rn-' + id + '"]');
+    const ref = root.querySelector('[id^="user-content-fnref-mdc-' + id + '"]');
     if (!ref) return null;
     return ref.closest('sup') || ref;
   }
@@ -145,6 +145,22 @@ const RNAnchor = (function () {
     if (fallback !== -1) return rangeFrom(before, fallback, target.length);
 
     return null;
+  }
+
+  /**
+   * Tags the generated "Unanchored comments" block so CSS can hide it. Unlike
+   * the footnotes it renders as ordinary Markdown with nothing to select on,
+   * and it is always last, so everything from its heading onward is ours.
+   */
+  function markGeneratedRegion(root) {
+    for (const tagged of root.querySelectorAll('.mdc-generated')) {
+      tagged.classList.remove('mdc-generated');
+    }
+    let node = regionBoundary(root);
+    while (node) {
+      node.classList.add('mdc-generated');
+      node = node.nextElementSibling;
+    }
   }
 
   /** Matches anchor text only when there is exactly one candidate. */
@@ -213,17 +229,17 @@ const RNAnchor = (function () {
       else if (entry.thread.status === 'resolved') resolved.push(entry.range);
       else open.push(entry.range);
     }
-    setHighlight('rn-comment', open);
-    setHighlight('rn-comment-resolved', resolved);
-    setHighlight('rn-comment-active', active);
+    setHighlight('mdc-comment', open);
+    setHighlight('mdc-comment-resolved', resolved);
+    setHighlight('mdc-comment-active', active);
     return true;
   }
 
   function clearHighlights() {
     if (!supportsHighlights) return;
-    CSS.highlights.delete('rn-comment');
-    CSS.highlights.delete('rn-comment-resolved');
-    CSS.highlights.delete('rn-comment-active');
+    CSS.highlights.delete('mdc-comment');
+    CSS.highlights.delete('mdc-comment-resolved');
+    CSS.highlights.delete('mdc-comment-active');
   }
 
   // MARK: - Hit testing
@@ -278,8 +294,9 @@ const RNAnchor = (function () {
     clearHighlights: clearHighlights,
     threadAtPoint: threadAtPoint,
     scrollTo: scrollTo,
+    markGeneratedRegion: markGeneratedRegion,
     supportsHighlights: supportsHighlights
   };
 })();
 
-if (typeof module === 'object' && module.exports) module.exports = RNAnchor;
+if (typeof module === 'object' && module.exports) module.exports = MDCAnchor;

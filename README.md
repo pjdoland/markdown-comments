@@ -37,6 +37,12 @@ Works anywhere GitHub renders Markdown from a repository:
 The panel appears on the right and the commented phrases are highlighted in the
 document. It shifts the page rather than covering it.
 
+While the panel is open, the footnote superscripts and the footnote list at the
+bottom are hidden: they exist so that people without the extension can read the
+discussion, and the panel is already showing it. Hide the panel and GitHub's
+plain rendering comes back. Footnotes the document genuinely uses are never
+touched.
+
 - **Show or hide**: click the extension's toolbar icon, press **Alt+C**, or use
   the floating Comments button. The choice is remembered across pages, and the
   shortcut can be rebound at `chrome://extensions/shortcuts`.
@@ -66,19 +72,19 @@ it, the write fails cleanly rather than clobbering their edit.
 ## How it looks in the file
 
 ```markdown
-The quick brown fox <!--rn:1a2b3c4d-->jumps over the lazy dog<!--/rn:1a2b3c4d-->[^rn-1a2b3c4d] every morning.
+The quick brown fox <!--mdc:1a2b3c4d-->jumps over the lazy dog<!--/mdc:1a2b3c4d-->[^mdc-1a2b3c4d] every morning.
 
-<!-- rn-comments-begin -->
-<!-- rn-comments-data
+<!-- mdc-comments-begin -->
+<!-- mdc-comments-data
 [{"anchor":"jumps over the lazy dog","id":"1a2b3c4d","replies":[...],"status":"open"}]
 -->
 
-[^rn-1a2b3c4d]:
+[^mdc-1a2b3c4d]:
     **@pjdoland** · Aug 10, 2026: Is "jumps" right here?
 
     **@alice** · Aug 10, 2026: Yes, present tense is intentional.
 
-<!-- rn-comments-end -->
+<!-- mdc-comments-end -->
 ```
 
 The anchor pair is invisible in every Markdown renderer. The JSON block is the
@@ -92,7 +98,7 @@ Two details are load-bearing and easy to get wrong:
 
 **A reference leads a block-initial anchor.** In CommonMark a line beginning with
 `<!--` starts an HTML block, which swallows the rest of the line, strips the
-markers, and leaves `[^rn-…]` rendered as literal text. So when the opening
+markers, and leaves `[^mdc-…]` rendered as literal text. So when the opening
 marker is the first thing on its line the reference goes in front of it, keeping
 the line ordinary Markdown. A multi-span anchor gets one reference per
 block-initial marker.
@@ -101,10 +107,10 @@ block-initial marker.
 as literal text, so a thread whose anchored text was deleted moves to a plain
 "Unanchored comments" list instead.
 
-The `rn-` prefix throughout the format is inherited from RepoNotepad, where the
-format originated. It is deliberately frozen: changing it would orphan the
-comments in every document already written, and break the guarantee that both
-tools produce identical bytes.
+The `mdc-` prefix runs through every part of the format. Changing it is a
+breaking change: it orphans the comments in any document already written, and it
+has to happen in RepoNotepad's Swift codec at the same moment or the two tools
+stop agreeing. `test/parity.sh` is what catches the second half of that.
 
 ## How it works
 
