@@ -208,10 +208,35 @@ const MDCPanel = (function () {
       bannerEl.textContent = state.busy;
       return;
     }
+    // A pull request is the outcome of a refused write, so it outranks the
+    // error that produced it.
+    if (state.pullRequest) {
+      bannerEl.hidden = false;
+      bannerEl.classList.add('mdc-info');
+      bannerEl.appendChild(document.createTextNode('Committed to a branch. '));
+      const link = document.createElement('a');
+      link.textContent = 'Pull request #' + state.pullRequest.number;
+      link.href = state.pullRequest.url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      bannerEl.appendChild(link);
+      return;
+    }
     if (state.error) {
       bannerEl.hidden = false;
       bannerEl.classList.add('mdc-error');
       bannerEl.appendChild(document.createTextNode(state.error + ' '));
+
+      // The write was refused for a reason with a way around it, and the text
+      // is still held, so offer the way around rather than only the failure.
+      if (state.blockedWrite && handlers.onCommitToBranch) {
+        const branch = document.createElement('a');
+        branch.textContent = 'Commit to a branch and open a pull request';
+        branch.addEventListener('click', function () { handlers.onCommitToBranch(); });
+        bannerEl.appendChild(branch);
+        return;
+      }
+
       if (handlers.onOpenOptions) {
         const options = document.createElement('a');
         options.textContent = 'Options';

@@ -26,7 +26,11 @@
           responded = true;
           if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
           if (!response) return reject(new Error('No response from the extension.'));
-          if (!response.ok) return reject(new Error(response.error || 'Request failed.'));
+          if (!response.ok) {
+            const failure = new Error(response.error || 'Request failed.');
+            failure.protectedBranch = !!response.protectedBranch;
+            return reject(failure);
+          }
           resolve(response.result);
         });
       } catch (error) {
@@ -192,6 +196,8 @@
     state.busy = 'Saving to GitHub...';
     state.error = null;
     state.notice = null;
+    state.blockedWrite = null;
+    state.pullRequest = null;
     MDCPanel.render(state);
 
     try {
@@ -213,11 +219,80 @@
       return true;
     } catch (error) {
       state.busy = null;
+      if (error.protectedBranch) {
+        // The write is not wrong, just not allowed here. Keep it so the panel
+        // can offer to put it on a branch instead of losing what was typed.
+        state.blockedWrite = { text: text, message: message };
+        state.error = error.message;
+        return false;
+      }
       state.error = error.message.indexOf('changed on GitHub') !== -1
         ? error.message + ' Reload the page and try again.'
         : error.message;
       return false;
     }
+  }
+
+  /**
+   * Puts a refused write on a new branch and opens a pull request for it.
+   *
+   * A protected branch is the normal state of the branch a design doc actually
+   * lives on, so refusing outright would make the extension useless exactly
+   * where it is most wanted. The page stays where it is, since the commit is
+   * now somewhere else; the panel shows the link.
+   */
+  async function commitToBranch() {
+    const blocked = state && state.blockedWrite;
+    if (!blocked) return;
+
+    const branch = 'mdc-comments-' + MDCCodec.newID();
+    const where = state.location;
+
+    state.busy = 'Creating a branch and a pull request...';
+    state.error = null;
+    MDCPanel.render(state);
+
+    try {
+      await send({
+        type: 'createBranch',
+        owner: where.owner,
+        repo: where.repo,
+        from: where.ref,
+        branch: branch
+      });
+
+      // The branch starts at the same commit, so the blob sha still matches and
+      // the same optimistic concurrency check applies.
+      await send({
+        type: 'putFile',
+        owner: where.owner,
+        repo: where.repo,
+        path: where.path,
+        branch: branch,
+        text: blocked.text,
+        sha: state.sha,
+        message: blocked.message
+      });
+
+      const pull = await send({
+        type: 'createPullRequest',
+        owner: where.owner,
+        repo: where.repo,
+        title: blocked.message,
+        head: branch,
+        base: where.ref,
+        body: 'Comments on `' + where.path + '`, added with Markdown Comments.'
+      });
+
+      state.blockedWrite = null;
+      state.pullRequest = pull;
+      state.notice = null;
+    } catch (error) {
+      state.error = error.message;
+    }
+
+    state.busy = null;
+    refresh();
   }
 
   // MARK: - Reloading after a write
@@ -462,6 +537,8 @@
       showResolved: false,
       candidates: new Map(),
       dismissed: new Set(),
+      blockedWrite: null,
+      pullRequest: null,
       busy: null,
       notice: null,
       // describeFailure in the service worker already tailors this to whether
@@ -648,6 +725,8 @@
       showResolved: false,
       candidates: new Map(),
       dismissed: new Set(),
+      blockedWrite: null,
+      pullRequest: null,
       busy: null,
       error: null,
       notice: null,
@@ -694,6 +773,7 @@
       onSetOpen: setPanelOpen,
       onShowResolved: refresh,
       onReanchor: reanchorThread,
+      onCommitToBranch: commitToBranch,
       onDismissReanchor: dismissReanchor
     });
 

@@ -73,6 +73,10 @@ Every action is a single commit through the GitHub Contents API, using the blob
 SHA for optimistic concurrency. If someone else changed the file since you loaded
 it, your write fails cleanly instead of overwriting their edit.
 
+If the branch does not take direct commits, which is the normal state of the
+branch a design doc actually lives on, the comment is not lost. The panel offers
+to put it on a new branch and open a pull request for it, and links the result.
+
 ## How comments are stored
 
 Three pieces, all inside the document:
