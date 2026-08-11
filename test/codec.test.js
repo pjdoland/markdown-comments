@@ -1,5 +1,6 @@
 /**
- * Mirrors RepoNotepadTests/CommentCodecTests.swift. Run with:
+ * The file format. Mirrored by a Swift implementation that must agree byte
+ * for byte; see test/parity.sh. Run with:
  *   node --test chrome-extension/test/
  */
 const test = require('node:test');

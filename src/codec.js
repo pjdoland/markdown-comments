@@ -1,9 +1,9 @@
 /**
  * Reads and writes the on-disk representation of document comments.
  *
- * This is a port of RepoNotepad/Services/CommentCodec.swift and MUST produce
- * byte-identical output. The two implementations edit the same files, so any
- * divergence shows up as spurious diffs and churned commits. Notably:
+ * A Swift implementation of this same format exists and MUST produce
+ * byte-identical output. The two edit the same files, so any divergence shows
+ * up as spurious diffs and churned commits. Notably:
  *
  *   - JSON keys are emitted in sorted order (Swift uses .sortedKeys)
  *   - timestamps are seconds-precision ISO 8601, no milliseconds
@@ -12,7 +12,7 @@
  *
  * Do not add fields to the wire format here alone. Swift's Codable drops keys
  * it does not know about, so a one-sided addition would be silently discarded
- * the next time the file is saved from the Mac app.
+ * the next time that implementation saved the file.
  */
 (function (root, factory) {
   const api = factory();

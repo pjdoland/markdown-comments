@@ -1,22 +1,24 @@
 #!/bin/bash
 #
-# Guards the interop guarantee: the Swift and JavaScript codecs must emit
-# byte-identical files. They edit the same documents, so any divergence shows
-# up as spurious diffs and churned commits.
+# Guards the interop guarantee: this codec and the Swift implementation of the
+# same format must emit byte-identical files. They edit the same documents, so
+# any divergence shows up as spurious diffs and churned commits.
 #
-# The Swift codec lives in the separate RepoNotepad repository. Point
-# REPO_NOTEPAD at that checkout, or keep the two side by side. With neither
-# there is nothing to compare against, so this skips rather than failing.
+# Point PARITY_SWIFT_REPO at that checkout. Without it there is nothing to
+# compare against, so this skips rather than failing.
 #
 # Usage: test/parity.sh
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SWIFT_REPO="${REPO_NOTEPAD:-$(cd "$ROOT/.." && pwd)/repo-notepad}"
+SWIFT_REPO="${PARITY_SWIFT_REPO:-}"
 
-if [ ! -f "$SWIFT_REPO/RepoNotepad/Services/CommentCodec.swift" ]; then
-  echo "Skipping parity check: no RepoNotepad checkout at $SWIFT_REPO."
-  echo "Set REPO_NOTEPAD=/path/to/repo-notepad to compare the two codecs."
+CODEC="$SWIFT_REPO/RepoNotepad/Services/CommentCodec.swift"
+MODEL="$SWIFT_REPO/RepoNotepad/Models/CommentThread.swift"
+
+if [ -z "$SWIFT_REPO" ] || [ ! -f "$CODEC" ]; then
+  echo "Skipping parity check: set PARITY_SWIFT_REPO to a checkout containing"
+  echo "the Swift implementation of this format."
   exit 0
 fi
 if ! command -v swiftc > /dev/null 2>&1; then
@@ -99,8 +101,8 @@ JS
 
 swiftc -sdk "$(xcrun --show-sdk-path)" -target arm64-apple-macos14.0 \
   -o "$WORK/emit_swift" \
-  "$SWIFT_REPO/RepoNotepad/Models/CommentThread.swift" \
-  "$SWIFT_REPO/RepoNotepad/Services/CommentCodec.swift" \
+  "$MODEL" \
+  "$CODEC" \
   "$WORK/main.swift"
 
 "$WORK/emit_swift" > "$WORK/swift.out"

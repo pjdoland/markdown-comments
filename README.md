@@ -1,170 +1,183 @@
 # Markdown Comments
 
-A Chrome extension that puts Google Docs style comments on Markdown files as you
-read them on github.com.
+Google Docs style comments on Markdown files, right where you read them on
+github.com. The comments live inside the `.md` file itself.
 
-Select a phrase, leave a comment, and it is committed straight to the file. The
-comment lives inside the `.md` itself, so anyone reading that file on github.com
-without this extension still sees the whole discussion as ordinary footnotes.
-There is no database, no service, and no sidecar file.
+![The comments panel open beside a Markdown document on GitHub, with commented phrases highlighted in the prose](docs/panel-light.png)
 
-The same format is read and written by
-[RepoNotepad](https://github.com/pjdoland/repo-notepad), a macOS Markdown editor,
-so a document can be authored there and reviewed here.
+## Why
+
+Reviewing a design doc in a pull request means arguing about diffs. Moving it to
+Google Docs means it stops living in the repository. This keeps the document
+where it belongs and adds the part that was missing: select a phrase, say
+something about it, get a reply.
+
+Because a comment is written into the Markdown, there is no database, no service,
+and no sidecar file to lose. Anyone who opens that file on github.com without
+this extension still sees the entire discussion, rendered as ordinary footnotes.
 
 ## Install
 
-Not on the Chrome Web Store. Load it unpacked:
+Not on the Chrome Web Store yet. Load it unpacked:
 
 1. Open `chrome://extensions`
 2. Turn on **Developer mode**
-3. **Load unpacked**, and pick this directory
-4. Open the extension's **Options** and paste a
+3. Choose **Load unpacked** and select this directory
+4. Open the extension's **Options** and add a
    [fine-grained personal access token](https://github.com/settings/tokens?type=beta)
-   with **Contents: read and write** on the repositories you want to comment in
 
-Reading public repositories works without a token. A token is required to post,
-and to read private repositories.
+The token needs **Contents: read and write**, and it must list the repositories
+you want to comment in. Fine-grained tokens grant access per repository, so a
+valid token is not the same as one that can reach a given repo. The options page
+has a **Check repository access** button that tells you which you have.
 
-## Use
+Reading public repositories works with no token at all.
 
-Works anywhere GitHub renders Markdown from a repository:
+## Using it
 
-- a file: `github.com/owner/repo/blob/main/notes.md`
-- a repository home page, which renders the README
-- a directory listing (`/tree/...`), which renders that directory's README
+It runs anywhere GitHub renders Markdown from a repository:
 
-The panel appears on the right and the commented phrases are highlighted in the
-document. It shifts the page rather than covering it.
+| Page | Renders |
+| --- | --- |
+| `github.com/owner/repo/blob/main/notes.md` | that file |
+| `github.com/owner/repo` | the repository README |
+| `github.com/owner/repo/tree/main/docs` | that directory's README |
 
-While the panel is open, the footnote superscripts and the footnote list at the
-bottom are hidden: they exist so that people without the extension can read the
-discussion, and the panel is already showing it. Hide the panel and GitHub's
-plain rendering comes back. Footnotes the document genuinely uses are never
-touched.
+**Leave a comment.** Select text in the document and a Comment button appears.
+Type, submit, and it is committed and pushed immediately.
 
-- **Show or hide**: click the extension's toolbar icon, press **Alt+C**, or use
-  the floating Comments button. The choice is remembered across pages, and the
-  shortcut can be rebound at `chrome://extensions/shortcuts`.
-- **Comment**: select text, then click the Comment button that appears (or press
-  Cmd-Alt-M). The comment is committed and pushed as soon as you post it.
-- **Navigate**: click a highlight to focus its thread, or a thread to scroll to
-  its highlight.
-- **Reply / Resolve / Delete**: select a thread in the panel. Replying to a
-  resolved thread reopens it.
+![Text selected in the document with a Comment button beneath it and a draft comment open in the panel](docs/new-comment.png)
 
-While a page is open the file is re-checked once a minute, so comments left by
-other people appear without a reload. The check is a conditional request, so an
-unchanged file costs a 304 and does not count against the API rate limit. If you
-are part-way through writing something, an update is announced rather than
-applied, so nothing you typed is discarded.
+**Everything else.** Click a highlight to jump to its thread, or a thread to jump
+to its highlight. Select a thread to reply, resolve, or delete it. Replying to a
+resolved thread reopens it.
 
-Comments are attributed by display name where the person has one, falling back
-to `@handle`. The file itself always stores the handle, which is what makes
-GitHub render it as a real profile link. Timestamps are shown in your own time
-zone, shortened to the time for today and the day for this year, with the full
-value including time zone on hover.
+**Show or hide the panel** with the toolbar icon, <kbd>Alt</kbd>+<kbd>C</kbd>, or
+the floating Comments button. The choice is remembered, and the shortcut can be
+rebound at `chrome://extensions/shortcuts`. The panel narrows the page rather
+than covering it, and it follows your GitHub theme.
 
-Each action is one commit through the GitHub Contents API, using the blob `sha`
-for optimistic concurrency. If someone else changed the file since you loaded
-it, the write fails cleanly rather than clobbering their edit.
+![The same document and panel in dark mode](docs/panel-dark.png)
 
-## How it looks in the file
+Open pages re-check the file every minute, so comments from other people arrive
+without a reload. If you are part-way through writing something, the update is
+announced instead of applied, so nothing you typed is lost.
+
+Every action is a single commit through the GitHub Contents API, using the blob
+SHA for optimistic concurrency. If someone else changed the file since you loaded
+it, your write fails cleanly instead of overwriting their edit.
+
+## How comments are stored
+
+Three pieces, all inside the document:
 
 ```markdown
-The quick brown fox <!--mdc:1a2b3c4d-->jumps over the lazy dog<!--/mdc:1a2b3c4d-->[^mdc-1a2b3c4d] every morning.
+Activation rose <!--mdc:a1b2c3d4-->11% against control<!--/mdc:a1b2c3d4-->[^mdc-a1b2c3d4], and it held.
 
 <!-- mdc-comments-begin -->
 <!-- mdc-comments-data
-[{"anchor":"jumps over the lazy dog","id":"1a2b3c4d","replies":[...],"status":"open"}]
+[{"anchor":"11% against control","id":"a1b2c3d4","replies":[...],"status":"open"}]
 -->
 
-[^mdc-1a2b3c4d]:
-    **@pjdoland** · Aug 10, 2026: Is "jumps" right here?
+[^mdc-a1b2c3d4]:
+    **@pjdoland** · Aug 10, 2026: Relative or absolute?
 
-    **@alice** · Aug 10, 2026: Yes, present tense is intentional.
+    **@dreyes** · Aug 10, 2026: Points. Fixing the wording.
 
 <!-- mdc-comments-end -->
 ```
 
-The anchor pair is invisible in every Markdown renderer. The JSON block is the
-authoritative copy. The footnote definitions are the human-visible layer, which
-GitHub renders as a superscript link at the comment site with a threaded note at
-the bottom. Everything from the begin sentinel onward is regenerated on save, so
-the visible layer cannot drift from the JSON. A file with no comments is left
-byte for byte alone.
+The **anchor pair** marks the commented range and is invisible in every Markdown
+renderer, so the prose reads normally. The **JSON block** is the authoritative
+copy and the only thing the extension parses. The **footnote definitions** are
+the human-visible layer: GitHub turns the reference into a superscript at the
+comment site, and the `@handle` into a real profile link.
 
-Two details are load-bearing and easy to get wrong:
+Everything from the begin sentinel onward is regenerated on every save, so the
+visible layer cannot drift from the JSON. A file with no comments is left byte
+for byte alone.
+
+Two rules in the format are load-bearing and easy to get wrong:
 
 **A reference leads a block-initial anchor.** In CommonMark a line beginning with
 `<!--` starts an HTML block, which swallows the rest of the line, strips the
-markers, and leaves `[^mdc-…]` rendered as literal text. So when the opening
-marker is the first thing on its line the reference goes in front of it, keeping
-the line ordinary Markdown. A multi-span anchor gets one reference per
-block-initial marker.
+markers, and leaves `[^mdc-...]` rendered as literal text. So when the opening
+marker is the first thing on its line, the reference goes in front of it and the
+line stays ordinary Markdown. A range spanning several blocks gets one reference
+per block.
 
 **Orphans get no footnote definition.** GitHub renders an unreferenced definition
 as literal text, so a thread whose anchored text was deleted moves to a plain
-"Unanchored comments" list instead.
+"Unanchored comments" list instead of being dropped.
 
-The `mdc-` prefix runs through every part of the format. Changing it is a
-breaking change: it orphans the comments in any document already written, and it
-has to happen in RepoNotepad's Swift codec at the same moment or the two tools
-stop agreeing. `test/parity.sh` is what catches the second half of that.
+Changing the `mdc-` prefix is a breaking change: it orphans the comments in every
+document already written.
 
 ## How it works
 
 GitHub strips HTML comments from its rendered output, so the anchor markers are
-not visible in the DOM and the raw source has to be fetched separately. What does
-survive is the footnote reference, sitting at exactly the end (or, for
-block-initial anchors, the start) of the anchored range. Recovering the range is
-then a walk of that many characters from the reference, which is unambiguous even
-when the same phrase appears elsewhere.
+invisible in the DOM and the raw source has to be fetched separately. What does
+survive is the footnote reference, sitting at exactly the end of the anchored
+range, or the start for a block-initial anchor. Recovering the range is then a
+walk of that many characters from the reference, which stays unambiguous even
+when the same phrase appears elsewhere in the document.
 
 | File | Role |
 | --- | --- |
-| `src/codec.js` | The file format. A port of RepoNotepad's `CommentCodec.swift`, with byte-identical output enforced by `test/parity.sh`. |
-| `src/content/anchor.js` | Finds each thread's range in the rendered DOM and highlights it. |
-| `src/content/sourcemap.js` | Maps a rendered selection back to an offset in the raw Markdown. |
-| `src/content/panel.js` | The margin panel. |
-| `src/content/main.js` | Orchestration, soft-navigation handling, commit flow. |
-| `src/background.js` | GitHub API calls, so the token never enters a page context. |
+| `src/codec.js` | The file format: parsing and regenerating the comment region |
+| `src/content/anchor.js` | Finds each thread's range in the rendered DOM and highlights it |
+| `src/content/sourcemap.js` | Maps a rendered selection back to an offset in the raw Markdown |
+| `src/content/panel.js` | The comments panel |
+| `src/content/main.js` | Orchestration, soft navigation, polling, commit flow |
+| `src/background.js` | GitHub API calls, so the token never enters a page context |
 
 Highlights use the CSS Custom Highlight API rather than wrapping text in spans.
 GitHub's blob view is a React tree and injected elements get discarded on
-re-render; highlights live outside the DOM entirely.
+re-render, so the highlights live outside the DOM entirely.
 
 The source map only has to be good enough to *locate* a phrase, not to render
 one. Every result is verified before use and an unverifiable match is refused,
-because anchoring the wrong span is worse than declining to anchor.
+because anchoring a comment to the wrong words is worse than declining to anchor
+it at all.
 
-## Tests
+## Development
+
+No build step. This is plain JavaScript, loaded directly by Chrome.
 
 ```bash
-node --test test/codec.test.js
-node --test test/sourcemap.test.js
-test/parity.sh    # Swift and JS codecs must agree exactly, byte for byte
+node --test test/codec.test.js       # the file format
+node --test test/sourcemap.test.js   # selection to source mapping
 ```
 
-The DOM layer is verified against HTML from GitHub's own Markdown renderer
+The DOM layer is checked against HTML from GitHub's own Markdown renderer
 (`POST /markdown`) rather than a local approximation, since the whole design
-depends on how GitHub actually renders footnotes and strips comments.
+rests on how GitHub actually renders footnotes and strips comments.
 
-## Limits
+`test/parity.sh` is an optional cross-check against a second implementation of
+this format, written in Swift. It compiles both and diffs the output, because two
+tools writing the same document have to agree byte for byte. It skips itself
+unless `PARITY_SWIFT_REPO` points at that checkout.
 
-- **Read and comment, not edit.** GitHub's rendered blob view is not an editor.
-  Use RepoNotepad to write prose.
-- **A comment that arrives while you are reading cannot always be highlighted.**
-  The page render predates it, so there is no footnote reference to anchor
-  against. The thread still appears in the panel, and the highlight is recovered
-  when its anchor text occurs exactly once; otherwise it waits for a reload.
+## Limitations
+
+- **It comments, it does not edit.** GitHub's rendered view is not an editor, so
+  this adds a discussion layer rather than a way to rewrite prose.
 - **Comments cannot nest.** Selecting text that overlaps an existing comment is
-  refused, because the rich editor in RepoNotepad skips text already inside a
-  comment span and would drop the inner markers on its next save.
-- **After posting, the page render is stale** until you reload. The new
-  highlight is kept in memory, but the footnote section at the bottom still
-  shows the previous state.
+  refused. Overlapping ranges cannot be represented unambiguously, and an editor
+  that round-trips the markers can silently drop the inner pair.
+- **After posting, the rendered page is stale** until you reload. The new
+  highlight is kept in memory, but the footnote section still shows the previous
+  state.
+- **A comment that arrives while you are reading may not highlight.** The page
+  render predates it, so there is no reference to anchor against. The thread
+  still appears in the panel, and the highlight is recovered when its anchor text
+  occurs exactly once.
 - **Selections spanning images or emoji shortcodes may not map.** They render as
   elements with no text, so the projection and the DOM disagree. The extension
   refuses rather than guessing.
-- **GitHub's DOM will change.** Site-specific extensions need periodic repair.
+- **GitHub's DOM will change.** Extensions that inject into someone else's site
+  need periodic repair.
+
+## License
+
+Not yet licensed. Add a `LICENSE` file before sharing this beyond yourself.

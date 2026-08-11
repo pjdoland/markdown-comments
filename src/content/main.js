@@ -698,7 +698,7 @@
       state.draft = null;
       refresh();
     }
-    // Cmd/Ctrl-Alt-M mirrors the RepoNotepad shortcut.
+    // Cmd/Ctrl-Alt-M, matching the usual comment-on-selection shortcut.
     if ((event.metaKey || event.ctrlKey) && event.altKey && event.key.toLowerCase() === 'm') {
       event.preventDefault();
       beginComment();
