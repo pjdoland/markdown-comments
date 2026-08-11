@@ -52,6 +52,12 @@ Type, submit, and it is committed and pushed immediately.
 to its highlight. Select a thread to reply, resolve, or delete it. Replying to a
 resolved thread reopens it.
 
+**When the text a comment was on gets edited**, the thread is orphaned and moves
+to the bottom of the document. If the passage still reads like the one it was
+written about, the panel offers to put it back and shows how close the match is.
+Re-anchoring is a commit, so it happens only when you accept, and a match that is
+merely plausible is not offered at all.
+
 **Show or hide the panel** with the toolbar icon, <kbd>Alt</kbd>+<kbd>C</kbd>, or
 the floating Comments button. The choice is remembered, and the shortcut can be
 rebound at `chrome://extensions/shortcuts`. The panel narrows the page rather

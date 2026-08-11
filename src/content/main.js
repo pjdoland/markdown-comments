@@ -120,10 +120,32 @@
     };
   }
 
+  /**
+   * Where each orphaned thread's text appears to have gone.
+   *
+   * Computed when the body changes rather than on every refresh: it scans the
+   * whole document per orphan, and the answer cannot change until someone edits
+   * the file. A thread the reader has already waved away stays waved away for
+   * the rest of the session.
+   */
+  function findReanchorCandidates() {
+    state.candidates = new Map();
+    for (const thread of state.threads) {
+      if (!thread.isOrphaned || state.dismissed.has(thread.id)) continue;
+      const candidate = MDCSourceMap.findFuzzySpan(state.body, thread.anchor);
+      if (candidate) state.candidates.set(thread.id, candidate);
+    }
+  }
+
   function buildEntries(root) {
     const entries = state.threads.map(function (thread) {
       const range = thread.isOrphaned ? null : MDCAnchor.locate(root, thread);
-      return { id: thread.id, thread: thread, range: range };
+      return {
+        id: thread.id,
+        thread: thread,
+        range: range,
+        candidate: state.candidates.get(thread.id) || null
+      };
     });
     entries.sort(function (a, b) {
       if (!a.range && !b.range) return 0;
@@ -305,6 +327,32 @@
     reloadWith({ selectedID: null, notice: 'Comment deleted.' });
   }
 
+  /**
+   * Writes an orphaned thread back onto the passage it seems to have followed.
+   * Only ever reached from the panel's offer: the match is a guess, and a
+   * comment pointing at the wrong words is worse than one pointing at nothing.
+   */
+  async function reanchorThread(id) {
+    const candidate = state && state.candidates.get(id);
+    if (!candidate) return;
+
+    const ok = await commit(function (next) {
+      next.body = MDCCodec.insertAnchor(next.body, id, candidate.start, candidate.end);
+      const thread = next.threads.find(function (t) { return t.id === id; });
+      if (thread) thread.anchor = candidate.text;
+    }, 'Re-anchor comment on ' + state.location.path);
+
+    if (!ok) return refresh();
+    reloadWith({ selectedID: id, notice: 'Comment re-anchored.' });
+  }
+
+  function dismissReanchor(id) {
+    if (!state) return;
+    state.dismissed.add(id);
+    state.candidates.delete(id);
+    refresh();
+  }
+
   // MARK: - Creating a comment from a selection
 
   function beginComment() {
@@ -412,6 +460,8 @@
       selectedID: null,
       draft: null,
       showResolved: false,
+      candidates: new Map(),
+      dismissed: new Set(),
       busy: null,
       notice: null,
       // describeFailure in the service worker already tailors this to whether
@@ -596,6 +646,8 @@
       selectedID: null,
       draft: null,
       showResolved: false,
+      candidates: new Map(),
+      dismissed: new Set(),
       busy: null,
       error: null,
       notice: null,
@@ -607,6 +659,8 @@
       // Writing to a detached commit is not a thing; require a branch.
       canWrite: !!(tokenState.hasToken && author) && !SHA_REF.test(where.ref) && !!where.ref
     };
+
+    findReanchorCandidates();
 
     // Only set when this load is the one a write asked for.
     const restored = takeStashedViewState(where);
@@ -638,7 +692,9 @@
       onOpenOptions: function () { send({ type: 'openOptions' }).catch(function () {}); },
       onRetry: retry,
       onSetOpen: setPanelOpen,
-      onShowResolved: refresh
+      onShowResolved: refresh,
+      onReanchor: reanchorThread,
+      onDismissReanchor: dismissReanchor
     });
 
     // A reload we asked for wins, then the remembered preference; otherwise
@@ -732,6 +788,7 @@
     state.sha = file.sha;
     state.body = parsed.body;
     state.threads = parsed.threads;
+    findReanchorCandidates();
     if (state.selectedID && !parsed.threads.some(function (t) { return t.id === state.selectedID; })) {
       state.selectedID = null;
     }

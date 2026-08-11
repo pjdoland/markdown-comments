@@ -307,6 +307,38 @@ const MDCPanel = (function () {
     if (handlers.onCancelDraft) handlers.onCancelDraft();
   }
 
+  /**
+   * The offer to put an orphaned thread back on the passage it looks like it
+   * followed. Shown rather than acted on: re-anchoring is a commit, and the
+   * match is a guess about someone else's edit.
+   */
+  function reanchorOffer(id, candidate) {
+    const wrap = el('div', 'mdc-reanchor');
+    wrap.appendChild(el('div', 'mdc-reanchor-head',
+      'Possibly moved here (' + Math.round(candidate.score * 100) + '% match)'));
+    wrap.appendChild(el('div', 'mdc-reanchor-text', candidate.text));
+
+    const actions = el('div', 'mdc-actions');
+    actions.appendChild(el('div', 'mdc-spacer'));
+
+    const dismiss = el('button', 'mdc-button', 'Dismiss');
+    dismiss.addEventListener('click', function (event) {
+      event.stopPropagation();
+      if (handlers.onDismissReanchor) handlers.onDismissReanchor(id);
+    });
+    actions.appendChild(dismiss);
+
+    const accept = el('button', 'mdc-button mdc-primary', 'Re-anchor');
+    accept.addEventListener('click', function (event) {
+      event.stopPropagation();
+      if (handlers.onReanchor) handlers.onReanchor(id);
+    });
+    actions.appendChild(accept);
+
+    wrap.appendChild(actions);
+    return wrap;
+  }
+
   function threadCard(entry, state) {
     const thread = entry.thread;
     const selected = state.selectedID === thread.id;
@@ -315,6 +347,9 @@ const MDCPanel = (function () {
       (thread.status === 'resolved' ? ' mdc-done' : ''));
 
     card.appendChild(quote(thread.anchor, thread.isOrphaned || !entry.range));
+    if (entry.candidate && state.canWrite) {
+      card.appendChild(reanchorOffer(thread.id, entry.candidate));
+    }
 
     for (const reply of thread.replies) {
       card.appendChild(replyBlock(reply, state));

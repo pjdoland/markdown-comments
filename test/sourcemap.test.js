@@ -147,3 +147,41 @@ test('an anchor inserted at the mapped span wraps exactly the selection', () => 
   const updated = codec.insertAnchor(source, 'deadbeef', span.start, span.end);
   assert.strictEqual(updated, 'Please review **<!--mdc:deadbeef-->this bold<!--/mdc:deadbeef-->** part now.');
 });
+
+// MARK: - Recovering an orphan
+
+test('a lightly edited sentence is found', () => {
+  const source = 'Intro paragraph.\n\nActivation rose 11 % against the control group, and it held.';
+  const found = map.findFuzzySpan(source, '11% against control');
+  assert.ok(found, 'expected a candidate');
+  assert.ok(found.score >= 0.7);
+  assert.ok(source.slice(found.start, found.end).includes('against'));
+});
+
+test('a phrase that is simply gone returns null', () => {
+  const source = 'Nothing in this document resembles the missing sentence at all.';
+  assert.strictEqual(map.findFuzzySpan(source, 'activation rose eleven percent'), null);
+});
+
+test('two equally good candidates are refused', () => {
+  const source = 'The deploy failed twice today.\n\nThe deploy failed twice today.';
+  assert.strictEqual(map.findFuzzySpan(source, 'deploy failed twice'), null);
+});
+
+test('a one word anchor is never fuzzy matched', () => {
+  assert.strictEqual(map.findFuzzySpan('the activation number moved', 'activation'), null);
+});
+
+test('a candidate overlapping an existing anchor is refused', () => {
+  const source = 'Activation rose <!--mdc:aaaaaaaa-->11 % against the control<!--/mdc:aaaaaaaa--> group.';
+  assert.strictEqual(map.findFuzzySpan(source, '11% against control'), null);
+});
+
+test('the candidate maps back to a span an anchor can wrap', () => {
+  const source = 'Lead in.\n\nActivation rose 11 % against the control group, and it held.';
+  const found = map.findFuzzySpan(source, '11% against control');
+  const wrapped = source.slice(0, found.start) + '[[' + source.slice(found.start, found.end) + ']]' +
+                  source.slice(found.end);
+  assert.ok(wrapped.includes('[['), 'span is insertable');
+  assert.ok(!source.slice(found.start, found.end).includes('<!--'));
+});

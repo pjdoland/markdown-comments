@@ -173,6 +173,19 @@ html.mdc-hide-plumbing .mdc-generated { display: none; }
 .mdc-quote.mdc-orphan .mdc-quote-text { text-decoration: line-through; }
 .mdc-orphan-note { display: block; text-decoration: none; opacity: 0.8; margin-top: 2px; }
 
+/* The re-anchor offer sits under the struck-through quote it would replace, so
+   the old text and the candidate can be read against each other. */
+.mdc-reanchor {
+  margin: -2px 0 8px;
+  padding: 7px 8px;
+  border-radius: 6px;
+  border: 1px dashed var(--mdc-border);
+  background: var(--mdc-subtle);
+}
+.mdc-reanchor-head { font-size: 11px; color: var(--mdc-muted); margin-bottom: 3px; }
+.mdc-reanchor-text { font-size: 11.5px; line-height: 1.45; }
+.mdc-reanchor .mdc-actions { margin-top: 6px; }
+
 .mdc-reply { margin-bottom: 8px; }
 .mdc-reply:last-of-type { margin-bottom: 0; }
 .mdc-reply-head {
