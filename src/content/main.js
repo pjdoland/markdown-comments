@@ -144,7 +144,6 @@
     if (!state || !root) return;
     state.entries = buildEntries(root);
     MDCAnchor.applyHighlights(state.entries, state.selectedID);
-    MDCAnchor.markGeneratedRegion(root);
     applyPlumbingVisibility(MDCPanel.isOpen());
     MDCPanel.render(state);
   }
@@ -291,7 +290,7 @@
     const range = selection.getRangeAt(0);
     if (!root.contains(range.commonAncestorContainer)) return;
 
-    const text = MDCAnchor.normalizeWhitespace(range.toString());
+    const text = MDCAnchor.rangeText(range);
     if (!text) return;
 
     const ordinal = MDCSourceMap.selectionOrdinal(root, range, text);
@@ -423,13 +422,29 @@
 
   /**
    * Hides the footnote superscripts and the footnote list while the panel is
-   * presenting the same comments, so the document reads as prose. Only done
-   * once threads actually loaded: with nothing to show in their place, GitHub's
-   * own rendering is the only way to read the discussion.
+   * presenting the same comments, so the document reads as prose.
+   *
+   * Not done while the panel would leave nothing in their place: a load
+   * failure, or a discussion that is entirely resolved and so sits collapsed
+   * behind a disclosure. GitHub's own rendering is the only way to read it
+   * then. Thread count is deliberately not part of this. A document with none
+   * has no plumbing for the rules to match, and keying on the count would make
+   * deleting the last comment reveal the stale footnote of the comment that was
+   * just deleted, since the page still shows the pre-commit render.
    */
   function applyPlumbingVisibility(open) {
-    const hide = !!open && !!state && !state.failed && state.threads.length > 0;
+    const hide = !!open && !!state && !state.failed && panelShowsEveryThread();
+    // Re-tagged here rather than only on refresh: the class sits on GitHub's
+    // own elements, so a re-render drops it while this one stays on <html>.
+    const root = hide ? markdownBody() : null;
+    if (root) MDCAnchor.markGeneratedRegion(root);
     document.documentElement.classList.toggle('mdc-hide-plumbing', hide);
+  }
+
+  /** False when the panel is holding part of the discussion behind a toggle. */
+  function panelShowsEveryThread() {
+    if (state.showResolved) return true;
+    return state.threads.every(function (thread) { return thread.status !== 'resolved'; });
   }
 
   function togglePanel() {
@@ -575,7 +590,8 @@
       },
       onOpenOptions: function () { send({ type: 'openOptions' }).catch(function () {}); },
       onRetry: retry,
-      onSetOpen: setPanelOpen
+      onSetOpen: setPanelOpen,
+      onShowResolved: refresh
     });
 
     // Remembered preference wins; otherwise open when there is something to see.

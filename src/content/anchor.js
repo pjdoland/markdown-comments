@@ -34,25 +34,46 @@ const MDCAnchor = (function () {
   }
 
   /**
+   * The elements GitHub rendered for the codec's unanchored block, or an empty
+   * list when the document has none.
+   *
+   * The block renders as ordinary markdown with no marker of its own, so it is
+   * recognised by the exact shape the codec emits: a top-level bold-only
+   * paragraph reading "Unanchored comments", immediately followed by the list
+   * of orphans. Both parts are required, and the paragraph must be a direct
+   * child of the rendered body, so prose that merely quotes the phrase does not
+   * match. The last such pair wins, since ours is written after the document.
+   *
+   * Nothing beyond those two elements is ours. GitHub's footnote section
+   * follows them, and so does anything a person typed below the region, and
+   * neither may be swept up.
+   */
+  function generatedElements(root) {
+    let found = [];
+    for (const strong of root.querySelectorAll(':scope > p > strong:only-child')) {
+      if (strong.textContent.trim() !== 'Unanchored comments') continue;
+      const paragraph = strong.parentElement;
+      const list = paragraph.nextElementSibling;
+      if (!list || list.tagName !== 'UL') continue;
+      found = [paragraph, list];
+    }
+    return found;
+  }
+
+  /**
+   * Where the generated region starts. Its text renders as ordinary markdown,
+   * so it would otherwise be indistinguishable from prose in the index.
+   */
+  function regionBoundary(root) {
+    const generated = generatedElements(root);
+    return generated.length ? generated[0] : null;
+  }
+
+  /**
    * Builds a whitespace-normalized string over the text nodes of `root`,
    * stopping before `stopEl`, keeping an index from each character back to its
    * (node, offset) so a match can be turned into a DOM Range.
    */
-  /**
-   * The generated comment region renders as ordinary markdown, so its text
-   * would otherwise be indistinguishable from prose. The footnote definitions
-   * land in `section.footnotes` and are skipped by class, but the unanchored
-   * list has no marker of its own. It is always last, so everything from its
-   * heading onward is out of bounds.
-   */
-  function regionBoundary(root) {
-    const headings = root.querySelectorAll('p > strong:only-child');
-    for (const strong of headings) {
-      if (strong.textContent.trim() === 'Unanchored comments') return strong.parentElement;
-    }
-    return null;
-  }
-
   function buildTextIndex(root, stopEl, startEl) {
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
     const boundary = regionBoundary(root);
@@ -149,18 +170,18 @@ const MDCAnchor = (function () {
 
   /**
    * Tags the generated "Unanchored comments" block so CSS can hide it. Unlike
-   * the footnotes it renders as ordinary Markdown with nothing to select on,
-   * and it is always last, so everything from its heading onward is ours.
+   * the footnotes it renders as ordinary Markdown with nothing to select on.
+   *
+   * Elements already carrying the class are left untouched rather than cleared
+   * and re-added: this runs on every refresh, and rewriting the class would
+   * invalidate style across the document each time for an identical result.
    */
   function markGeneratedRegion(root) {
+    const generated = generatedElements(root);
     for (const tagged of root.querySelectorAll('.mdc-generated')) {
-      tagged.classList.remove('mdc-generated');
+      if (generated.indexOf(tagged) === -1) tagged.classList.remove('mdc-generated');
     }
-    let node = regionBoundary(root);
-    while (node) {
-      node.classList.add('mdc-generated');
-      node = node.nextElementSibling;
-    }
+    for (const element of generated) element.classList.add('mdc-generated');
   }
 
   /** Matches anchor text only when there is exactly one candidate. */
@@ -186,22 +207,21 @@ const MDCAnchor = (function () {
     }
   }
 
-  /** Locates every thread, returning entries in document order. */
-  function locateAll(root, threads) {
-    const entries = threads.map(function (thread) {
-      return {
-        id: thread.id,
-        thread: thread,
-        range: thread.isOrphaned ? null : locate(root, thread)
-      };
-    });
-    entries.sort(function (a, b) {
-      if (!a.range && !b.range) return 0;
-      if (!a.range) return 1;
-      if (!b.range) return -1;
-      return a.range.compareBoundaryPoints(Range.START_TO_START, b.range);
-    });
-    return entries;
+  /**
+   * The prose a range covers, as the source spells it.
+   *
+   * Range.toString() concatenates every text node between its endpoints,
+   * including the footnote reference superscripts, and those digits appear
+   * nowhere in the markdown. They are invisible while the panel is open, so a
+   * selection that crosses one looks perfectly ordinary on screen; dropping
+   * them here is what keeps it matchable against the source.
+   */
+  function rangeText(range) {
+    const fragment = range.cloneContents();
+    for (const el of fragment.querySelectorAll('[data-footnote-ref], .footnotes, [data-mdc-ui], .anchor')) {
+      el.remove();
+    }
+    return normalizeWhitespace(fragment.textContent);
   }
 
   // MARK: - Highlighting
@@ -289,7 +309,7 @@ const MDCAnchor = (function () {
     normalizeWhitespace: normalizeWhitespace,
     buildTextIndex: buildTextIndex,
     locate: locate,
-    locateAll: locateAll,
+    rangeText: rangeText,
     applyHighlights: applyHighlights,
     clearHighlights: clearHighlights,
     threadAtPoint: threadAtPoint,

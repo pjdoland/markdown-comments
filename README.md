@@ -153,11 +153,6 @@ The DOM layer is checked against HTML from GitHub's own Markdown renderer
 (`POST /markdown`) rather than a local approximation, since the whole design
 rests on how GitHub actually renders footnotes and strips comments.
 
-`test/parity.sh` is an optional cross-check against a second implementation of
-this format, written in Swift. It compiles both and diffs the output, because two
-tools writing the same document have to agree byte for byte. It skips itself
-unless `PARITY_SWIFT_REPO` points at that checkout.
-
 ## Limitations
 
 - **It comments, it does not edit.** GitHub's rendered view is not an editor, so

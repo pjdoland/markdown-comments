@@ -16,14 +16,20 @@
 /*
  * The footnote superscripts and the list at the bottom are how this format
  * stays readable for people without the extension. While the panel is showing
- * the same discussion they are redundant plumbing, so they are hidden. Only
- * this extension's own footnotes are affected: any the document genuinely uses
- * are left alone, and the section disappears only when nothing but ours is in
- * it.
+ * the same discussion they are redundant plumbing, so they are hidden.
+ *
+ * All of them or none of them. GitHub renders every footnote into one ordered
+ * list, and hiding individual items drops them from its counter, which would
+ * renumber the document's own footnotes out of step with the superscripts that
+ * point at them. So the moment the section holds a footnote the document
+ * genuinely uses, none of this applies and the plumbing stays visible.
+ *
+ * `> ol > li` counts only the section's own entries: replies are indented into
+ * their footnote, so a bullet list inside one renders as a nested item and
+ * would otherwise read as a genuine footnote.
  */
-html.mdc-hide-plumbing sup:has(> a[id^="user-content-fnref-mdc-"]) { display: none; }
-html.mdc-hide-plumbing li[id^="user-content-fn-mdc-"] { display: none; }
-html.mdc-hide-plumbing section[data-footnotes]:not(:has(li:not([id^="user-content-fn-mdc-"]))) {
+html.mdc-hide-plumbing:not(:has(section[data-footnotes] > ol > li:not([id^="user-content-fn-mdc-"]))) sup:has(> a[id^="user-content-fnref-mdc-"]),
+html.mdc-hide-plumbing:not(:has(section[data-footnotes] > ol > li:not([id^="user-content-fn-mdc-"]))) section[data-footnotes] {
   display: none;
 }
 html.mdc-hide-plumbing .mdc-generated { display: none; }
