@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "Markdown Comments",
+  "version": "0.1.0",
+  "description": "Google Docs style comments on Markdown files in GitHub repositories, stored inside the file itself.",
+  "permissions": ["storage"],
+  "host_permissions": ["https://api.github.com/*", "https://github.com/*"],
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "options_page": "options/options.html",
+  "action": {
+    "default_title": "Show or hide comments (Alt+C)"
+  },
+  "commands": {
+    "toggle-comments": {
+      "suggested_key": { "default": "Alt+C" },
+      "description": "Show or hide the comments panel"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://github.com/*"],
+      "js": [
+        "src/codec.js",
+        "src/content/anchor.js",
+        "src/content/sourcemap.js",
+        "src/content/panel.js",
+        "src/content/main.js"
+      ],
+      "css": ["src/content/styles.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}

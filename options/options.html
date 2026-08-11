@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Repo Notepad Comments</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    max-width: 620px;
+    margin: 40px auto;
+    padding: 0 24px;
+  }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  p.lede { margin-top: 0; opacity: .75; }
+  label { display: block; font-weight: 600; margin: 24px 0 6px; }
+  input[type="password"], input[type="text"] {
+    width: 100%;
+    padding: 8px 10px;
+    font: inherit;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    border: 1px solid rgba(128,128,128,.5);
+    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    box-sizing: border-box;
+  }
+  button {
+    font: inherit;
+    padding: 7px 14px;
+    border-radius: 6px;
+    border: 1px solid rgba(128,128,128,.5);
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+  }
+  button.primary { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+  button[disabled] { opacity: .5; cursor: default; }
+  .row { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
+  .status { margin-top: 14px; padding: 10px 12px; border-radius: 6px; display: none; }
+  .status.ok { display: block; background: rgba(46,160,67,.15); }
+  .status.err { display: block; background: rgba(248,81,73,.15); }
+  ol { padding-left: 20px; }
+  li { margin: 6px 0; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .9em; }
+  .note { opacity: .7; font-size: 13px; margin-top: 28px; border-top: 1px solid rgba(128,128,128,.3); padding-top: 16px; }
+</style>
+</head>
+<body>
+  <h1>Repo Notepad Comments</h1>
+  <p class="lede">Comments on Markdown files, stored inside the file itself.</p>
+
+  <p>Reading public repositories works without a token. A token is needed to post
+     comments, and to read private repositories.</p>
+
+  <ol>
+    <li>Create a <a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noreferrer">fine-grained personal access token</a>.</li>
+    <li>Give it <strong>Contents: read and write</strong> on the repositories you want to comment in.</li>
+    <li>Paste it below. It is stored in this browser's extension storage and sent only to <code>api.github.com</code>.</li>
+  </ol>
+
+  <label for="token">Personal access token</label>
+  <input id="token" type="password" placeholder="github_pat_..." autocomplete="off" spellcheck="false">
+
+  <div class="row">
+    <button id="save" class="primary">Save and verify</button>
+    <button id="clear">Remove token</button>
+  </div>
+
+  <div id="status" class="status"></div>
+
+  <label for="repo">Check repository access</label>
+  <p style="margin:0 0 8px;opacity:.75;font-size:13px">
+    A valid token is not the same as a token that can reach a given repository.
+    Fine-grained tokens are granted per repository, and one that was not granted
+    this repository looks identical to one where the file does not exist.
+  </p>
+  <input id="repo" type="text" placeholder="owner/repository" autocomplete="off" spellcheck="false">
+  <div class="row">
+    <button id="check">Check access</button>
+  </div>
+  <div id="repoStatus" class="status"></div>
+
+  <p class="note">
+    Comments are written into the Markdown file as a footnote block, so they
+    stay readable on github.com for people without this extension, and the same
+    files can be edited in RepoNotepad.
+  </p>
+
+  <script src="options.js"></script>
+</body>
+</html>
