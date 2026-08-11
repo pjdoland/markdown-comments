@@ -174,7 +174,11 @@ const MDCPanel = (function () {
       header.style.alignSelf = 'flex-start';
       header.addEventListener('click', function () {
         state.showResolved = !state.showResolved;
-        render(state);
+        // Whether the resolved threads are on screen decides whether the
+        // document's own copy of them can be hidden, so this goes back through
+        // the host rather than re-rendering the panel on its own.
+        if (handlers.onShowResolved) handlers.onShowResolved();
+        else render(state);
       });
       listEl.appendChild(header);
       if (state.showResolved) {

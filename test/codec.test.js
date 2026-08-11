@@ -1,6 +1,6 @@
 /**
  * The file format. Mirrored by a Swift implementation that must agree byte
- * for byte; see test/parity.sh. Run with:
+ * for byte, so anything pinned here is pinned for both. Run with:
  *   node --test chrome-extension/test/
  */
 const test = require('node:test');
@@ -174,6 +174,17 @@ test('reply text cannot forge a sentinel', () => {
   const result = codec.split(joined);
   assert.strictEqual(result.threads.length, 1);
   assert.strictEqual(result.threads[0].replies[0].text, 'look: <!-- mdc-comments-end --> and --> too');
+});
+
+// Pinned to the literal text, not to the constants. The Swift implementation
+// hard-codes these same strings, so a round trip through this codec alone would
+// stay green while the two stopped being able to read each other's files.
+test('region sentinels are the agreed literals', () => {
+  assert.strictEqual(codec.BEGIN_SENTINEL, '<!-- mdc-comments-begin -->');
+  assert.strictEqual(codec.END_SENTINEL, '<!-- mdc-comments-end -->');
+  const joined = codec.join(anchoredBody(), [thread()]);
+  assert.ok(joined.includes('<!-- mdc-comments-begin -->'));
+  assert.ok(joined.includes('<!-- mdc-comments-end -->'));
 });
 
 test('JSON block never contains a comment terminator', () => {
