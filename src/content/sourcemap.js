@@ -255,6 +255,131 @@ const MDCSourceMap = (function () {
     return count;
   }
 
+  // MARK: - Recovering an orphan
+
+  const FUZZY_SCORE = 0.7;   // below this it is a different sentence
+  const FUZZY_MARGIN = 0.15; // and it has to beat the runner-up by this much
+
+  function words(text) {
+    const found = [];
+    for (const match of String(text || '').matchAll(/[A-Za-z0-9]+/g)) {
+      found.push({ word: match[0].toLowerCase(), start: match.index, end: match.index + match[0].length });
+    }
+    return found;
+  }
+
+  /** How much of two word lists is shared, counting repeats. */
+  function overlap(a, b) {
+    const counts = new Map();
+    for (const word of a) counts.set(word, (counts.get(word) || 0) + 1);
+    let shared = 0;
+    for (const word of b) {
+      const left = counts.get(word) || 0;
+      if (left > 0) {
+        counts.set(word, left - 1);
+        shared += 1;
+      }
+    }
+    return shared / Math.max(a.length, b.length);
+  }
+
+  /** How many words sit at the same offset in both lists. */
+  function alignment(a, b) {
+    let same = 0;
+    for (let i = 0; i < Math.min(a.length, b.length); i++) {
+      if (a[i] === b[i]) same += 1;
+    }
+    return same;
+  }
+
+  // Markup the candidate must not cut through. An anchor pair written across
+  // half an emphasis run or a link would rewrite the prose as well as annotate
+  // it, so a passage carrying any of this is left for a person to select.
+  const MARKUP = /[`*_[\]<>|]/;
+
+  /**
+   * Where an orphaned thread's text seems to have gone, or null.
+   *
+   * A thread is orphaned when its anchor markers are no longer in the file,
+   * which usually means the sentence was edited rather than deleted. This finds
+   * the passage that still reads like it, so the thread can be offered back its
+   * place instead of sitting at the bottom of the document forever.
+   *
+   * It is deliberately hard to satisfy. The match has to be good in absolute
+   * terms and clearly better than the next candidate, because the cost of being
+   * wrong is a comment silently pointing at the wrong words, which is the
+   * failure this whole module is written to avoid. The caller confirms before
+   * anything is written.
+   */
+  function findFuzzySpan(source, target) {
+    const wanted = words(normalize(target));
+    // One word is a coincidence, not a match.
+    if (wanted.length < 2) return null;
+
+    const projection = project(source);
+    const haystack = words(projection.text);
+    if (!haystack.length) return null;
+
+    const wantedWords = wanted.map(function (w) { return w.word; });
+    const shortest = Math.max(2, wanted.length - 2);
+    const longest = wanted.length + 2;
+
+    const windows = [];
+    for (let i = 0; i < haystack.length; i++) {
+      for (let n = shortest; n <= longest && i + n <= haystack.length; n++) {
+        const span = haystack.slice(i, i + n);
+        const found = span.map(function (w) { return w.word; });
+        windows.push({
+          score: overlap(wantedWords, found),
+          // Two windows can share a score while one of them starts a word early.
+          // Words landing at the same offset as in the original break that tie.
+          aligned: alignment(wantedWords, found),
+          first: i,
+          last: i + n - 1,
+          from: span[0].start,
+          to: span[n - 1].end
+        });
+      }
+    }
+    if (!windows.length) return null;
+
+    windows.sort(function (a, b) {
+      return (b.score - a.score) || (b.aligned - a.aligned) || (a.first - b.first);
+    });
+    const best = windows[0];
+
+    // The rival is the best window somewhere else in the document. Overlapping
+    // windows are the same passage measured twice, not a second candidate.
+    let runnerUp = 0;
+    for (const window of windows) {
+      if (window.first > best.last || window.last < best.first) {
+        runnerUp = window.score;
+        break;
+      }
+    }
+
+    if (best.score < FUZZY_SCORE || best.score - runnerUp < FUZZY_MARGIN) return null;
+
+    const start = projection.map[best.from];
+    const endChar = projection.map[best.to - 1];
+    if (start == null || endChar == null) return null;
+    const end = endChar + 1;
+
+    // Same refusals as a fresh anchor: comments cannot nest, and markers in the
+    // slice would be swallowed by the pair we are about to write around it.
+    const slice = source.slice(start, end);
+    if (!slice.trim()) return null;
+    if (MARKUP.test(slice)) return null;
+    if (overlapsAnchor(source, start, end)) return null;
+
+    return {
+      start: start,
+      end: end,
+      score: best.score,
+      text: projection.text.slice(best.from, best.to)
+    };
+  }
+
   /**
    * Resolves rendered text to a [start, end) span of the raw markdown.
    * Returns { start, end } or { error } explaining why it could not.
@@ -302,6 +427,7 @@ const MDCSourceMap = (function () {
     project: project,
     selectionOrdinal: selectionOrdinal,
     findSourceSpan: findSourceSpan,
+    findFuzzySpan: findFuzzySpan,
     normalize: normalize
   };
 })();

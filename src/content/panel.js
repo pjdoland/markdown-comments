@@ -16,6 +16,7 @@ const MDCPanel = (function () {
   let countEl = null;
   let handlers = {};
   let lastState = null;
+  let showingDiagnostics = false;
   const pendingText = Object.create(null);
 
   /**
@@ -62,6 +63,11 @@ const MDCPanel = (function () {
 
     root = el('div', 'mdc-panel');
     root.setAttribute('data-mdc-ui', 'panel');
+    root.setAttribute('role', 'complementary');
+    root.setAttribute('aria-label', 'Comments');
+    // Focusable as a container so opening the panel can land here and be
+    // announced, without making the panel itself a tab stop.
+    root.setAttribute('tabindex', '-1');
     root.hidden = true;
 
     const header = el('div', 'mdc-header');
@@ -78,12 +84,26 @@ const MDCPanel = (function () {
     header.appendChild(close);
     root.appendChild(header);
 
+    // Saving, failures and arrivals all land here without the reader looking,
+    // so they are announced rather than only drawn.
     bannerEl = el('div', 'mdc-banner');
+    bannerEl.setAttribute('role', 'status');
+    bannerEl.setAttribute('aria-live', 'polite');
     bannerEl.hidden = true;
     root.appendChild(bannerEl);
 
     listEl = el('div', 'mdc-list');
+    listEl.setAttribute('role', 'list');
     root.appendChild(listEl);
+
+    const footer = el('div', 'mdc-footer');
+    const diagnosticsLink = el('button', 'mdc-link', 'Diagnostics');
+    diagnosticsLink.addEventListener('click', function () {
+      showingDiagnostics = !showingDiagnostics;
+      if (lastState) render(lastState);
+    });
+    footer.appendChild(diagnosticsLink);
+    root.appendChild(footer);
 
     toggle = el('button', 'mdc-toggle');
     toggle.setAttribute('data-mdc-ui', 'toggle');
@@ -109,14 +129,21 @@ const MDCPanel = (function () {
     if (toggle) toggle.remove();
     root = toggle = listEl = bannerEl = countEl = null;
     lastState = null;
+    showingDiagnostics = false;
     for (const key of Object.keys(pendingText)) delete pendingText[key];
   }
 
-  function setOpen(open) {
+  function setOpen(open, moveFocus) {
     if (!root) return;
     root.hidden = !open;
     if (toggle) toggle.hidden = open;
     if (open && lastState) render(lastState);
+
+    // Only when a person asked. Boot also comes through here, and stealing
+    // focus from the document on page load would be its own bug.
+    if (!moveFocus) return;
+    if (open) root.focus();
+    else if (toggle) toggle.focus();
   }
 
   function isOpen() {
@@ -151,6 +178,8 @@ const MDCPanel = (function () {
     const openCount = state.threads.filter(function (t) { return t.status !== 'resolved'; }).length;
     countEl.hidden = openCount === 0;
     countEl.textContent = String(openCount);
+    countEl.setAttribute('aria-label',
+      openCount + (openCount === 1 ? ' open comment' : ' open comments'));
 
     toggle.textContent = openCount ? 'Comments ' + openCount : 'Comments';
     // Always offer the toggle on a supported page. Hiding it when a file has no
@@ -160,6 +189,12 @@ const MDCPanel = (function () {
     renderBanner(state);
 
     listEl.textContent = '';
+
+    if (showingDiagnostics) {
+      renderDiagnostics();
+      restoreFocus(focus);
+      return;
+    }
 
     if (state.draft) listEl.appendChild(draftCard(state.draft));
 
@@ -172,6 +207,7 @@ const MDCPanel = (function () {
     if (resolved.length) {
       const header = el('button', 'mdc-button', resolved.length + ' resolved');
       header.style.alignSelf = 'flex-start';
+      header.setAttribute('aria-expanded', state.showResolved ? 'true' : 'false');
       header.addEventListener('click', function () {
         state.showResolved = !state.showResolved;
         // Whether the resolved threads are on screen decides whether the
@@ -197,6 +233,48 @@ const MDCPanel = (function () {
     restoreFocus(focus);
   }
 
+  /**
+   * The checks, as pass or fail lines with a way to copy the lot. When the
+   * highlights stop appearing, this is the difference between "GitHub changed
+   * something" and "the extension is not running".
+   */
+  function renderDiagnostics() {
+    const report = handlers.onDiagnostics ? handlers.onDiagnostics() : [];
+    const list = el('div', 'mdc-diagnostics');
+
+    for (const check of report) {
+      const row = el('div', 'mdc-check' + (check.ok === false ? ' mdc-check-bad' : ''));
+      row.appendChild(el('span', 'mdc-check-mark', check.ok === false ? '\u00d7' : (check.ok ? '\u2713' : '\u00b7')));
+      row.appendChild(el('span', 'mdc-check-label', check.label));
+      row.appendChild(el('span', 'mdc-check-value', check.value));
+      list.appendChild(row);
+    }
+    listEl.appendChild(list);
+
+    const actions = el('div', 'mdc-actions');
+    actions.appendChild(el('div', 'mdc-spacer'));
+
+    const copy = el('button', 'mdc-button', 'Copy');
+    copy.addEventListener('click', function () {
+      const text = report.map(function (check) {
+        return '- ' + check.label + ': ' + check.value;
+      }).join('\n');
+      navigator.clipboard.writeText(text).then(
+        function () { copy.textContent = 'Copied'; },
+        function () { copy.textContent = 'Copy failed'; }
+      );
+    });
+    actions.appendChild(copy);
+
+    const back = el('button', 'mdc-button mdc-primary', 'Back to comments');
+    back.addEventListener('click', function () {
+      showingDiagnostics = false;
+      if (lastState) render(lastState);
+    });
+    actions.appendChild(back);
+    listEl.appendChild(actions);
+  }
+
   function renderBanner(state) {
     bannerEl.textContent = '';
     bannerEl.hidden = true;
@@ -208,10 +286,35 @@ const MDCPanel = (function () {
       bannerEl.textContent = state.busy;
       return;
     }
+    // A pull request is the outcome of a refused write, so it outranks the
+    // error that produced it.
+    if (state.pullRequest) {
+      bannerEl.hidden = false;
+      bannerEl.classList.add('mdc-info');
+      bannerEl.appendChild(document.createTextNode('Committed to a branch. '));
+      const link = document.createElement('a');
+      link.textContent = 'Pull request #' + state.pullRequest.number;
+      link.href = state.pullRequest.url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      bannerEl.appendChild(link);
+      return;
+    }
     if (state.error) {
       bannerEl.hidden = false;
       bannerEl.classList.add('mdc-error');
       bannerEl.appendChild(document.createTextNode(state.error + ' '));
+
+      // The write was refused for a reason with a way around it, and the text
+      // is still held, so offer the way around rather than only the failure.
+      if (state.blockedWrite && handlers.onCommitToBranch) {
+        const branch = document.createElement('a');
+        branch.textContent = 'Commit to a branch and open a pull request';
+        branch.addEventListener('click', function () { handlers.onCommitToBranch(); });
+        bannerEl.appendChild(branch);
+        return;
+      }
+
       if (handlers.onOpenOptions) {
         const options = document.createElement('a');
         options.textContent = 'Options';
@@ -260,6 +363,7 @@ const MDCPanel = (function () {
 
   function draftCard(draft) {
     const card = el('div', 'mdc-card mdc-draft');
+    card.setAttribute('role', 'listitem');
     card.appendChild(quote(draft.anchor, false));
 
     const input = el('textarea', 'mdc-input');
@@ -307,6 +411,38 @@ const MDCPanel = (function () {
     if (handlers.onCancelDraft) handlers.onCancelDraft();
   }
 
+  /**
+   * The offer to put an orphaned thread back on the passage it looks like it
+   * followed. Shown rather than acted on: re-anchoring is a commit, and the
+   * match is a guess about someone else's edit.
+   */
+  function reanchorOffer(id, candidate) {
+    const wrap = el('div', 'mdc-reanchor');
+    wrap.appendChild(el('div', 'mdc-reanchor-head',
+      'Possibly moved here (' + Math.round(candidate.score * 100) + '% match)'));
+    wrap.appendChild(el('div', 'mdc-reanchor-text', candidate.text));
+
+    const actions = el('div', 'mdc-actions');
+    actions.appendChild(el('div', 'mdc-spacer'));
+
+    const dismiss = el('button', 'mdc-button', 'Dismiss');
+    dismiss.addEventListener('click', function (event) {
+      event.stopPropagation();
+      if (handlers.onDismissReanchor) handlers.onDismissReanchor(id);
+    });
+    actions.appendChild(dismiss);
+
+    const accept = el('button', 'mdc-button mdc-primary', 'Re-anchor');
+    accept.addEventListener('click', function (event) {
+      event.stopPropagation();
+      if (handlers.onReanchor) handlers.onReanchor(id);
+    });
+    actions.appendChild(accept);
+
+    wrap.appendChild(actions);
+    return wrap;
+  }
+
   function threadCard(entry, state) {
     const thread = entry.thread;
     const selected = state.selectedID === thread.id;
@@ -314,7 +450,22 @@ const MDCPanel = (function () {
       (selected ? ' mdc-selected' : '') +
       (thread.status === 'resolved' ? ' mdc-done' : ''));
 
+    card.setAttribute('role', 'listitem');
+    card.setAttribute('tabindex', '0');
+    if (selected) card.setAttribute('aria-current', 'true');
+    card.addEventListener('keydown', function (event) {
+      // The card holds its own buttons and textarea, so only a keypress landing
+      // on the card itself means "select this thread".
+      if (event.target !== card) return;
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      if (handlers.onSelect) handlers.onSelect(selected ? null : thread.id);
+    });
+
     card.appendChild(quote(thread.anchor, thread.isOrphaned || !entry.range));
+    if (entry.candidate && state.canWrite) {
+      card.appendChild(reanchorOffer(thread.id, entry.candidate));
+    }
 
     for (const reply of thread.replies) {
       card.appendChild(replyBlock(reply, state));
@@ -384,10 +535,16 @@ const MDCPanel = (function () {
     const block = el('div', 'mdc-reply');
     const head = el('div', 'mdc-reply-head');
 
-    if (profile && profile.avatar) {
+    // The URL comes from GitHub's user API, but this is the one attribute in
+    // the panel built from a response rather than typed by us, so it is checked
+    // rather than trusted. No avatar is a better outcome than an unknown one.
+    const avatarURL = profile && /^https:\/\//.test(String(profile.avatar || ''))
+      ? profile.avatar
+      : null;
+    if (avatarURL) {
       const avatar = document.createElement('img');
       avatar.className = 'mdc-avatar';
-      avatar.src = profile.avatar + (profile.avatar.indexOf('?') === -1 ? '?s=48' : '&s=48');
+      avatar.src = avatarURL + (avatarURL.indexOf('?') === -1 ? '?s=48' : '&s=48');
       avatar.alt = '';
       avatar.addEventListener('error', function () { avatar.remove(); });
       head.appendChild(avatar);
@@ -402,7 +559,12 @@ const MDCPanel = (function () {
     head.appendChild(stamp);
 
     block.appendChild(head);
-    block.appendChild(el('div', 'mdc-text', reply.text));
+
+    // Replies are written and stored as Markdown, and GitHub renders them as
+    // Markdown in the footnote. Showing them flat here was the odd one out.
+    const body = el('div', 'mdc-text');
+    body.appendChild(MDCMarkdown.render(reply.text));
+    block.appendChild(body);
     return block;
   }
 
@@ -411,6 +573,13 @@ const MDCPanel = (function () {
     if (!trimmed) return;
     delete pendingText['reply:' + id];
     if (handlers.onReply) handlers.onReply(id, trimmed);
+  }
+
+  /** Puts the caret in a thread's reply box, for the keyboard path. */
+  function focusReply(id) {
+    if (!root || root.hidden) return;
+    const field = root.querySelector('[data-mdc-field="' + CSS.escape('reply:' + id) + '"]');
+    if (field) field.focus();
   }
 
   function scrollCardIntoView(id) {
@@ -425,6 +594,7 @@ const MDCPanel = (function () {
     render: render,
     setOpen: setOpen,
     isOpen: isOpen,
-    scrollCardIntoView: scrollCardIntoView
+    scrollCardIntoView: scrollCardIntoView,
+    focusReply: focusReply
   };
 })();

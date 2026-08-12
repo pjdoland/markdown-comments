@@ -25,6 +25,7 @@
         "src/codec.js",
         "src/content/anchor.js",
         "src/content/sourcemap.js",
+        "src/content/markdown.js",
         "src/content/panel.js",
         "src/content/main.js"
       ],

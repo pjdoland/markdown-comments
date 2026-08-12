@@ -26,7 +26,11 @@
           responded = true;
           if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
           if (!response) return reject(new Error('No response from the extension.'));
-          if (!response.ok) return reject(new Error(response.error || 'Request failed.'));
+          if (!response.ok) {
+            const failure = new Error(response.error || 'Request failed.');
+            failure.protectedBranch = !!response.protectedBranch;
+            return reject(failure);
+          }
           resolve(response.result);
         });
       } catch (error) {
@@ -120,11 +124,32 @@
     };
   }
 
+  /**
+   * Where each orphaned thread's text appears to have gone.
+   *
+   * Computed when the body changes rather than on every refresh: it scans the
+   * whole document per orphan, and the answer cannot change until someone edits
+   * the file. A thread the reader has already waved away stays waved away for
+   * the rest of the session.
+   */
+  function findReanchorCandidates() {
+    state.candidates = new Map();
+    for (const thread of state.threads) {
+      if (!thread.isOrphaned || state.dismissed.has(thread.id)) continue;
+      const candidate = MDCSourceMap.findFuzzySpan(state.body, thread.anchor);
+      if (candidate) state.candidates.set(thread.id, candidate);
+    }
+  }
+
   function buildEntries(root) {
     const entries = state.threads.map(function (thread) {
-      let range = state.overrides.get(thread.id) || null;
-      if (!range && !thread.isOrphaned) range = MDCAnchor.locate(root, thread);
-      return { id: thread.id, thread: thread, range: range };
+      const range = thread.isOrphaned ? null : MDCAnchor.locate(root, thread);
+      return {
+        id: thread.id,
+        thread: thread,
+        range: range,
+        candidate: state.candidates.get(thread.id) || null
+      };
     });
     entries.sort(function (a, b) {
       if (!a.range && !b.range) return 0;
@@ -171,6 +196,8 @@
     state.busy = 'Saving to GitHub...';
     state.error = null;
     state.notice = null;
+    state.blockedWrite = null;
+    state.pullRequest = null;
     MDCPanel.render(state);
 
     try {
@@ -192,11 +219,127 @@
       return true;
     } catch (error) {
       state.busy = null;
+      if (error.protectedBranch) {
+        // The write is not wrong, just not allowed here. Keep it so the panel
+        // can offer to put it on a branch instead of losing what was typed.
+        state.blockedWrite = { text: text, message: message };
+        state.error = error.message;
+        return false;
+      }
       state.error = error.message.indexOf('changed on GitHub') !== -1
         ? error.message + ' Reload the page and try again.'
         : error.message;
       return false;
     }
+  }
+
+  /**
+   * Puts a refused write on a new branch and opens a pull request for it.
+   *
+   * A protected branch is the normal state of the branch a design doc actually
+   * lives on, so refusing outright would make the extension useless exactly
+   * where it is most wanted. The page stays where it is, since the commit is
+   * now somewhere else; the panel shows the link.
+   */
+  async function commitToBranch() {
+    const blocked = state && state.blockedWrite;
+    if (!blocked) return;
+
+    const branch = 'mdc-comments-' + MDCCodec.newID();
+    const where = state.location;
+
+    state.busy = 'Creating a branch and a pull request...';
+    state.error = null;
+    MDCPanel.render(state);
+
+    try {
+      await send({
+        type: 'createBranch',
+        owner: where.owner,
+        repo: where.repo,
+        from: where.ref,
+        branch: branch
+      });
+
+      // The branch starts at the same commit, so the blob sha still matches and
+      // the same optimistic concurrency check applies.
+      await send({
+        type: 'putFile',
+        owner: where.owner,
+        repo: where.repo,
+        path: where.path,
+        branch: branch,
+        text: blocked.text,
+        sha: state.sha,
+        message: blocked.message
+      });
+
+      const pull = await send({
+        type: 'createPullRequest',
+        owner: where.owner,
+        repo: where.repo,
+        title: blocked.message,
+        head: branch,
+        base: where.ref,
+        body: 'Comments on `' + where.path + '`, added with Markdown Comments.'
+      });
+
+      state.blockedWrite = null;
+      state.pullRequest = pull;
+      state.notice = null;
+    } catch (error) {
+      state.error = error.message;
+    }
+
+    state.busy = null;
+    refresh();
+  }
+
+  // MARK: - Reloading after a write
+
+  const RESTORE_KEY = 'mdc:restore';
+
+  /**
+   * GitHub renders the Markdown on its side, so a comment only becomes a
+   * footnote once the page is asked for again. Reloading is the whole fix for
+   * the write showing up, and everything it costs (the panel, the selection,
+   * the scroll position) is cheap to carry across in sessionStorage.
+   */
+  function reloadWith(outcome) {
+    try {
+      sessionStorage.setItem(RESTORE_KEY, JSON.stringify({
+        owner: state.location.owner,
+        repo: state.location.repo,
+        ref: state.location.ref,
+        path: state.location.path,
+        selectedID: outcome.selectedID || null,
+        panelOpen: MDCPanel.isOpen(),
+        scrollY: window.scrollY,
+        notice: outcome.notice || null
+      }));
+    } catch (e) {
+      // Storage can be refused outright. Losing the selection is worth it to
+      // still show the comment.
+    }
+    state.busy = 'Reloading...';
+    MDCPanel.render(state);
+    location.reload();
+  }
+
+  /** The stash left by the write that caused this load, if it was this file. */
+  function takeStashedViewState(where) {
+    let stashed = null;
+    try {
+      const raw = sessionStorage.getItem(RESTORE_KEY);
+      sessionStorage.removeItem(RESTORE_KEY);
+      stashed = raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      return null;
+    }
+    if (!stashed) return null;
+    // A stash from a different file would restore a selection that is not here.
+    return stashed.owner === where.owner && stashed.repo === where.repo &&
+           stashed.ref === where.ref && stashed.path === where.path ? stashed : null;
   }
 
   async function submitDraft(text) {
@@ -214,15 +357,9 @@
       }]);
     }, 'Comment on ' + state.location.path);
 
-    if (ok) {
-      // The page still shows the pre-commit render, so there is no footnote
-      // reference to anchor against yet. Keep the selection range until reload.
-      if (draft.range) state.overrides.set(draft.id, draft.range);
-      state.selectedID = draft.id;
-      state.draft = null;
-      state.notice = 'Comment committed. Reload to see it rendered as a footnote.';
-    }
-    refresh();
+    if (!ok) return refresh();
+    state.draft = null;
+    reloadWith({ selectedID: draft.id, notice: 'Comment added.' });
   }
 
   async function addReply(id, text) {
@@ -232,16 +369,20 @@
       thread.replies.push({ author: state.author, date: new Date(), text: text });
       if (thread.status === 'resolved') thread.status = 'open';
     }, 'Comment on ' + state.location.path);
-    if (ok) state.selectedID = id;
-    refresh();
+    if (!ok) return refresh();
+    reloadWith({ selectedID: id, notice: 'Reply added.' });
   }
 
   async function setStatus(id, status) {
-    await commit(function (next) {
+    const ok = await commit(function (next) {
       const thread = next.threads.find(function (t) { return t.id === id; });
       if (thread) thread.status = status;
     }, (status === 'resolved' ? 'Resolve comment on ' : 'Reopen comment on ') + state.location.path);
-    refresh();
+    if (!ok) return refresh();
+    reloadWith({
+      selectedID: id,
+      notice: status === 'resolved' ? 'Comment resolved.' : 'Comment reopened.'
+    });
   }
 
   async function deleteThread(id) {
@@ -257,10 +398,33 @@
     const ok = await commit(function (next) {
       next.threads = next.threads.filter(function (t) { return t.id !== id; });
     }, 'Delete comment on ' + state.location.path);
-    if (ok) {
-      state.overrides.delete(id);
-      if (state.selectedID === id) state.selectedID = null;
-    }
+    if (!ok) return refresh();
+    reloadWith({ selectedID: null, notice: 'Comment deleted.' });
+  }
+
+  /**
+   * Writes an orphaned thread back onto the passage it seems to have followed.
+   * Only ever reached from the panel's offer: the match is a guess, and a
+   * comment pointing at the wrong words is worse than one pointing at nothing.
+   */
+  async function reanchorThread(id) {
+    const candidate = state && state.candidates.get(id);
+    if (!candidate) return;
+
+    const ok = await commit(function (next) {
+      next.body = MDCCodec.insertAnchor(next.body, id, candidate.start, candidate.end);
+      const thread = next.threads.find(function (t) { return t.id === id; });
+      if (thread) thread.anchor = candidate.text;
+    }, 'Re-anchor comment on ' + state.location.path);
+
+    if (!ok) return refresh();
+    reloadWith({ selectedID: id, notice: 'Comment re-anchored.' });
+  }
+
+  function dismissReanchor(id) {
+    if (!state) return;
+    state.dismissed.add(id);
+    state.candidates.delete(id);
     refresh();
   }
 
@@ -368,10 +532,13 @@
       body: '',
       threads: [],
       entries: [],
-      overrides: new Map(),
       selectedID: null,
       draft: null,
       showResolved: false,
+      candidates: new Map(),
+      dismissed: new Set(),
+      blockedWrite: null,
+      pullRequest: null,
       busy: null,
       notice: null,
       // describeFailure in the service worker already tailors this to whether
@@ -385,7 +552,10 @@
     };
     MDCPanel.mount({
       onOpenOptions: function () { send({ type: 'openOptions' }).catch(function () {}); },
-      onRetry: retry
+      onRetry: retry,
+      // Especially here. A failed load is exactly when someone wants to know
+      // what the extension could see.
+      onDiagnostics: diagnostics
     });
     MDCPanel.render(state);
   }
@@ -412,7 +582,9 @@
   }
 
   function setPanelOpen(open, persist) {
-    MDCPanel.setOpen(open);
+    // `persist` marks the changes a person asked for, which are the only ones
+    // that should move focus.
+    MDCPanel.setOpen(open, !!persist);
     applyLayoutShift(open);
     applyPlumbingVisibility(open);
     if (persist !== false) {
@@ -553,10 +725,13 @@
       body: parsed.body,
       threads: parsed.threads,
       entries: [],
-      overrides: new Map(),
       selectedID: null,
       draft: null,
       showResolved: false,
+      candidates: new Map(),
+      dismissed: new Set(),
+      blockedWrite: null,
+      pullRequest: null,
       busy: null,
       error: null,
       notice: null,
@@ -568,6 +743,16 @@
       // Writing to a detached commit is not a thing; require a branch.
       canWrite: !!(tokenState.hasToken && author) && !SHA_REF.test(where.ref) && !!where.ref
     };
+
+    findReanchorCandidates();
+
+    // Only set when this load is the one a write asked for.
+    const restored = takeStashedViewState(where);
+    if (restored) {
+      const stillHere = state.threads.some(function (t) { return t.id === restored.selectedID; });
+      if (stillHere) state.selectedID = restored.selectedID;
+      state.notice = restored.notice;
+    }
 
     console.info('[mdc-comments] ready', {
       file: where.owner + '/' + where.repo + '@' + where.ref + ':' + where.path,
@@ -591,15 +776,82 @@
       onOpenOptions: function () { send({ type: 'openOptions' }).catch(function () {}); },
       onRetry: retry,
       onSetOpen: setPanelOpen,
-      onShowResolved: refresh
+      onShowResolved: refresh,
+      onReanchor: reanchorThread,
+      onCommitToBranch: commitToBranch,
+      onDiagnostics: diagnostics,
+      onDismissReanchor: dismissReanchor
     });
 
-    // Remembered preference wins; otherwise open when there is something to see.
+    // A reload we asked for wins, then the remembered preference; otherwise
+    // open when there is something to see.
     const preference = await storedPanelPreference();
-    setPanelOpen(preference === null ? state.threads.length > 0 : preference, false);
+    let open = preference === null ? state.threads.length > 0 : preference;
+    if (restored) open = restored.panelOpen;
+    setPanelOpen(open, false);
     refresh();
+
+    if (restored) {
+      // After the layout shift and the highlights, or it lands in the wrong
+      // place and GitHub's own restoration fights it.
+      requestAnimationFrame(function () { window.scrollTo(0, restored.scrollY); });
+    }
+
     loadProfiles();
     startPolling();
+  }
+
+  // MARK: - Telling you what broke
+
+  /**
+   * What the extension can and cannot see right now.
+   *
+   * This exists because the way this fails is silent. It reads a page someone
+   * else owns, and when GitHub changes that page the highlights simply stop
+   * appearing, which looks exactly like not having installed anything. These
+   * are the observations that separate those two, in a form that can be pasted
+   * into a bug report.
+   */
+  function diagnostics() {
+    const root = markdownBody();
+    const manifest = chrome.runtime.getManifest ? chrome.runtime.getManifest() : {};
+    const where = state && state.location;
+    const entries = (state && state.entries) || [];
+    const orphans = entries.filter(function (e) { return e.thread.isOrphaned; }).length;
+    const anchored = entries.length - orphans;
+    const located = entries.filter(function (e) { return e.range; }).length;
+    const references = root ? root.querySelectorAll('[id^="user-content-fnref-mdc-"]').length : 0;
+
+    return [
+      { label: 'Extension', value: manifest.version || 'unknown' },
+      { label: 'File format', value: 'v' + MDCCodec.FORMAT_VERSION },
+      {
+        label: 'Page',
+        value: where ? where.kind + ' ' + where.owner + '/' + where.repo + '@' + where.ref : 'not a supported page',
+        ok: !!where
+      },
+      { label: 'File', value: where ? where.path : '-', ok: !!(where && where.path) },
+      { label: 'Rendered body found', value: root ? 'yes' : 'no', ok: !!root },
+      { label: 'Highlight API', value: CSS && CSS.highlights ? 'available' : 'missing', ok: !!(CSS && CSS.highlights) },
+      { label: 'Threads in file', value: String(entries.length) },
+      {
+        label: 'Anchored threads highlighted',
+        value: located + ' of ' + anchored,
+        // The one that catches a GitHub change: the file says these threads are
+        // anchored, and the page cannot find where.
+        ok: located === anchored
+      },
+      {
+        label: 'Footnote references in page',
+        value: String(references),
+        ok: references > 0 || anchored === 0
+      },
+      { label: 'Orphaned threads', value: String(orphans) },
+      { label: 'Re-anchor candidates', value: String(state ? state.candidates.size : 0) },
+      { label: 'Token saved', value: state && state.hasToken ? 'yes' : 'no', ok: !!(state && state.hasToken) },
+      { label: 'Can write here', value: state && state.canWrite ? 'yes' : 'no', ok: !!(state && state.canWrite) },
+      { label: 'Last error', value: (state && state.error) || 'none', ok: !(state && state.error) }
+    ];
   }
 
   function teardown() {
@@ -675,7 +927,7 @@
     state.sha = file.sha;
     state.body = parsed.body;
     state.threads = parsed.threads;
-    state.overrides = new Map();
+    findReanchorCandidates();
     if (state.selectedID && !parsed.threads.some(function (t) { return t.id === state.selectedID; })) {
       state.selectedID = null;
     }
@@ -708,6 +960,27 @@
     }
   });
 
+  /** True while the keystroke belongs to something being typed into. */
+  function isTyping(target) {
+    if (!target) return false;
+    if (target.isContentEditable) return true;
+    const tag = target.tagName;
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+  }
+
+  /** Moves the selection along the panel's own order, wrapping at both ends. */
+  function stepThread(delta) {
+    const shown = state.entries.filter(function (entry) {
+      return state.showResolved || entry.thread.status !== 'resolved';
+    });
+    if (!shown.length) return;
+    const at = shown.findIndex(function (entry) { return entry.id === state.selectedID; });
+    const next = at === -1
+      ? (delta > 0 ? 0 : shown.length - 1)
+      : (at + delta + shown.length) % shown.length;
+    selectThread(shown[next].id);
+  }
+
   document.addEventListener('keydown', function (event) {
     if (!state || !event.key) return;
     if (event.key === 'Escape' && state.draft) {
@@ -718,6 +991,30 @@
     if ((event.metaKey || event.ctrlKey) && event.altKey && event.key.toLowerCase() === 'm') {
       event.preventDefault();
       beginComment();
+      return;
+    }
+
+    // Single letters, so only while the panel is showing and nothing is being
+    // typed into. GitHub has its own single-key shortcuts, hence preventDefault
+    // on the ones taken here.
+    if (!MDCPanel.isOpen() || isTyping(event.target)) return;
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+    if (event.key === 'j' || event.key === 'k') {
+      event.preventDefault();
+      stepThread(event.key === 'j' ? 1 : -1);
+      return;
+    }
+    if (event.key === 'r' && state.selectedID) {
+      event.preventDefault();
+      MDCPanel.focusReply(state.selectedID);
+      return;
+    }
+    if (event.key === 'e' && state.selectedID) {
+      const thread = state.threads.find(function (t) { return t.id === state.selectedID; });
+      if (!thread || !state.canWrite) return;
+      event.preventDefault();
+      setStatus(thread.id, thread.status === 'resolved' ? 'open' : 'resolved');
     }
   });
 

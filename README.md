@@ -52,6 +52,16 @@ Type, submit, and it is committed and pushed immediately.
 to its highlight. Select a thread to reply, resolve, or delete it. Replying to a
 resolved thread reopens it.
 
+**When the text a comment was on gets edited**, the thread is orphaned and moves
+to the bottom of the document. If the passage still reads like the one it was
+written about, the panel offers to put it back and shows how close the match is.
+Re-anchoring is a commit, so it happens only when you accept, and a match that is
+merely plausible is not offered at all.
+
+**From the keyboard**, <kbd>j</kbd> and <kbd>k</kbd> move between threads,
+<kbd>r</kbd> puts the caret in the reply box, and <kbd>e</kbd> resolves or
+reopens. They apply while the panel is open and you are not typing.
+
 **Show or hide the panel** with the toolbar icon, <kbd>Alt</kbd>+<kbd>C</kbd>, or
 the floating Comments button. The choice is remembered, and the shortcut can be
 rebound at `chrome://extensions/shortcuts`. The panel narrows the page rather
@@ -67,6 +77,10 @@ Every action is a single commit through the GitHub Contents API, using the blob
 SHA for optimistic concurrency. If someone else changed the file since you loaded
 it, your write fails cleanly instead of overwriting their edit.
 
+If the branch does not take direct commits, which is the normal state of the
+branch a design doc actually lives on, the comment is not lost. The panel offers
+to put it on a new branch and open a pull request for it, and links the result.
+
 ## How comments are stored
 
 Three pieces, all inside the document:
@@ -76,7 +90,9 @@ Activation rose <!--mdc:a1b2c3d4-->11% against control<!--/mdc:a1b2c3d4-->[^mdc-
 
 <!-- mdc-comments-begin -->
 <!-- mdc-comments-data
-[{"anchor":"11% against control","id":"a1b2c3d4","replies":[...],"status":"open"}]
+{"v":1,"threads":[
+{"anchor":"11% against control","id":"a1b2c3d4","replies":[...],"status":"open"}
+]}
 -->
 
 [^mdc-a1b2c3d4]:
@@ -96,6 +112,12 @@ comment site, and the `@handle` into a real profile link.
 Everything from the begin sentinel onward is regenerated on every save, so the
 visible layer cannot drift from the JSON. A file with no comments is left byte
 for byte alone.
+
+The JSON block carries a version and puts one thread per line. The version means
+the next change to the shape can be a migration rather than a break; the line per
+thread means two branches that each add a comment conflict on their own lines
+instead of on the whole block. Readers still accept the unversioned array that
+came before.
 
 Two rules in the format are load-bearing and easy to get wrong:
 
@@ -126,7 +148,8 @@ when the same phrase appears elsewhere in the document.
 | --- | --- |
 | `src/codec.js` | The file format: parsing and regenerating the comment region |
 | `src/content/anchor.js` | Finds each thread's range in the rendered DOM and highlights it |
-| `src/content/sourcemap.js` | Maps a rendered selection back to an offset in the raw Markdown |
+| `src/content/sourcemap.js` | Maps a rendered selection back to an offset in the raw Markdown, and finds where an orphaned thread's text went |
+| `src/content/markdown.js` | Renders reply text, as elements rather than as HTML |
 | `src/content/panel.js` | The comments panel |
 | `src/content/main.js` | Orchestration, soft navigation, polling, commit flow |
 | `src/background.js` | GitHub API calls, so the token never enters a page context |
@@ -146,7 +169,8 @@ No build step. This is plain JavaScript, loaded directly by Chrome.
 
 ```bash
 node --test test/codec.test.js       # the file format
-node --test test/sourcemap.test.js   # selection to source mapping
+node --test test/sourcemap.test.js   # selection to source mapping, and re-anchoring
+node --test test/markdown.test.js    # the reply Markdown subset
 ```
 
 The DOM layer has no automated coverage. Both halves of it, how GitHub renders
@@ -160,9 +184,10 @@ against real rendered output, so they are checked by hand.
 - **Comments cannot nest.** Selecting text that overlaps an existing comment is
   refused. Overlapping ranges cannot be represented unambiguously, and an editor
   that round-trips the markers can silently drop the inner pair.
-- **After posting, the rendered page is stale** until you reload. The new
-  highlight is kept in memory, but the footnote section still shows the previous
-  state.
+- **Posting reloads the page.** GitHub renders the Markdown on its side, so the
+  only way to see a comment as a real footnote is to ask for the page again. The
+  panel, the selected thread and the scroll position are carried across, but the
+  reload is visible.
 - **A comment that arrives while you are reading may not highlight.** The page
   render predates it, so there is no reference to anchor against. The thread
   still appears in the panel, and the highlight is recovered when its anchor text
@@ -171,8 +196,13 @@ against real rendered output, so they are checked by hand.
   elements with no text, so the projection and the DOM disagree. The extension
   refuses rather than guessing.
 - **GitHub's DOM will change.** Extensions that inject into someone else's site
-  need periodic repair.
+  need periodic repair. When that happens the failure is silent, so the panel has
+  a **Diagnostics** view that says which parts of the page it could and could not
+  find, and a button to copy the lot into a bug report.
 
 ## License
 
-Not yet licensed. Add a `LICENSE` file before sharing this beyond yourself.
+Copyright (c) 2026 PJ Doland. All rights reserved. See [LICENSE](LICENSE).
+
+The source is readable here, which is not the same as licensed: no permission is
+granted to use, copy, modify, or redistribute it. Ask if you want some.
