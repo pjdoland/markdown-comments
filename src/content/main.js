@@ -552,7 +552,10 @@
     };
     MDCPanel.mount({
       onOpenOptions: function () { send({ type: 'openOptions' }).catch(function () {}); },
-      onRetry: retry
+      onRetry: retry,
+      // Especially here. A failed load is exactly when someone wants to know
+      // what the extension could see.
+      onDiagnostics: diagnostics
     });
     MDCPanel.render(state);
   }
