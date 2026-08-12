@@ -210,11 +210,7 @@ const MDCPanel = (function () {
       header.setAttribute('aria-expanded', state.showResolved ? 'true' : 'false');
       header.addEventListener('click', function () {
         state.showResolved = !state.showResolved;
-        // Whether the resolved threads are on screen decides whether the
-        // document's own copy of them can be hidden, so this goes back through
-        // the host rather than re-rendering the panel on its own.
-        if (handlers.onShowResolved) handlers.onShowResolved();
-        else render(state);
+        render(state);
       });
       listEl.appendChild(header);
       if (state.showResolved) {

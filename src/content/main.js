@@ -370,6 +370,7 @@
         // it is looking at the commit it just made.
         expectSha: state.sha || null,
         panelOpen: MDCPanel.isOpen(),
+        showResolved: !!state.showResolved,
         scrollY: window.scrollY,
         notice: outcome.notice || null
       }));
@@ -685,27 +686,27 @@
    * Hides the footnote superscripts and the footnote list while the panel is
    * presenting the same comments, so the document reads as prose.
    *
-   * Not done while the panel would leave nothing in their place: a load
-   * failure, or a discussion that is entirely resolved and so sits collapsed
-   * behind a disclosure. GitHub's own rendering is the only way to read it
-   * then. Thread count is deliberately not part of this. A document with none
-   * has no plumbing for the rules to match, and keying on the count would make
-   * deleting the last comment reveal the stale footnote of the comment that was
-   * just deleted, since the page still shows the pre-commit render.
+   * Whether the panel is open is the whole condition, so the document does not
+   * reflow while it is. Nothing about which threads the panel happens to be
+   * showing belongs here: making the superscripts come and go as a disclosure
+   * is expanded moves the prose under the reader for no reason they can see.
+   * Making sure the panel has something to show is done where that decision
+   * lives, by opening the resolved list when there is nothing else in it.
+   *
+   * A load failure still shows the plumbing, since a panel with nothing in it
+   * leaves GitHub's own rendering as the only way to read the discussion. Thread
+   * count is deliberately not part of this either: a document with none has no
+   * plumbing for the rules to match, and keying on the count would make deleting
+   * the last comment reveal the stale footnote of the comment just deleted,
+   * since the page still shows the pre-commit render.
    */
   function applyPlumbingVisibility(open) {
-    const hide = !!open && !!state && !state.failed && panelShowsEveryThread();
+    const hide = !!open && !!state && !state.failed;
     // Re-tagged here rather than only on refresh: the class sits on GitHub's
     // own elements, so a re-render drops it while this one stays on <html>.
     const root = hide ? markdownBody() : null;
     if (root) MDCAnchor.markGeneratedRegion(root);
     document.documentElement.classList.toggle('mdc-hide-plumbing', hide);
-  }
-
-  /** False when the panel is holding part of the discussion behind a toggle. */
-  function panelShowsEveryThread() {
-    if (state.showResolved) return true;
-    return state.threads.every(function (thread) { return thread.status !== 'resolved'; });
   }
 
   function togglePanel() {
@@ -826,7 +827,11 @@
       entries: [],
       selectedID: null,
       draft: null,
-      showResolved: false,
+      // A file whose discussion is entirely resolved opens with it shown. The
+      // alternative is a panel holding only a "2 resolved" button while the
+      // document's own copy of those comments is hidden behind it.
+      showResolved: parsed.threads.length > 0 &&
+        parsed.threads.every(function (t) { return t.status === 'resolved'; }),
       candidates: new Map(),
       dismissed: new Set(),
       blockedWrite: null,
@@ -848,6 +853,7 @@
     if (restored) {
       const stillHere = state.threads.some(function (t) { return t.id === restored.selectedID; });
       if (stillHere) state.selectedID = restored.selectedID;
+      if (restored.showResolved) state.showResolved = true;
       state.notice = restored.notice;
     }
 
@@ -873,7 +879,6 @@
       onOpenOptions: function () { send({ type: 'openOptions' }).catch(function () {}); },
       onRetry: retry,
       onSetOpen: setPanelOpen,
-      onShowResolved: refresh,
       onReanchor: reanchorThread,
       onCommitToBranch: commitToBranch,
       onDiagnostics: diagnostics,
