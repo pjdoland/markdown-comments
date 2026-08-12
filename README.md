@@ -58,6 +58,10 @@ written about, the panel offers to put it back and shows how close the match is.
 Re-anchoring is a commit, so it happens only when you accept, and a match that is
 merely plausible is not offered at all.
 
+**From the keyboard**, <kbd>j</kbd> and <kbd>k</kbd> move between threads,
+<kbd>r</kbd> puts the caret in the reply box, and <kbd>e</kbd> resolves or
+reopens. They apply while the panel is open and you are not typing.
+
 **Show or hide the panel** with the toolbar icon, <kbd>Alt</kbd>+<kbd>C</kbd>, or
 the floating Comments button. The choice is remembered, and the shortcut can be
 rebound at `chrome://extensions/shortcuts`. The panel narrows the page rather
@@ -144,7 +148,8 @@ when the same phrase appears elsewhere in the document.
 | --- | --- |
 | `src/codec.js` | The file format: parsing and regenerating the comment region |
 | `src/content/anchor.js` | Finds each thread's range in the rendered DOM and highlights it |
-| `src/content/sourcemap.js` | Maps a rendered selection back to an offset in the raw Markdown |
+| `src/content/sourcemap.js` | Maps a rendered selection back to an offset in the raw Markdown, and finds where an orphaned thread's text went |
+| `src/content/markdown.js` | Renders reply text, as elements rather than as HTML |
 | `src/content/panel.js` | The comments panel |
 | `src/content/main.js` | Orchestration, soft navigation, polling, commit flow |
 | `src/background.js` | GitHub API calls, so the token never enters a page context |
@@ -164,7 +169,8 @@ No build step. This is plain JavaScript, loaded directly by Chrome.
 
 ```bash
 node --test test/codec.test.js       # the file format
-node --test test/sourcemap.test.js   # selection to source mapping
+node --test test/sourcemap.test.js   # selection to source mapping, and re-anchoring
+node --test test/markdown.test.js    # the reply Markdown subset
 ```
 
 The DOM layer has no automated coverage. Both halves of it, how GitHub renders
@@ -190,7 +196,9 @@ against real rendered output, so they are checked by hand.
   elements with no text, so the projection and the DOM disagree. The extension
   refuses rather than guessing.
 - **GitHub's DOM will change.** Extensions that inject into someone else's site
-  need periodic repair.
+  need periodic repair. When that happens the failure is silent, so the panel has
+  a **Diagnostics** view that says which parts of the page it could and could not
+  find, and a button to copy the lot into a bug report.
 
 ## License
 

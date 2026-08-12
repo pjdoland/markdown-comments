@@ -579,7 +579,9 @@
   }
 
   function setPanelOpen(open, persist) {
-    MDCPanel.setOpen(open);
+    // `persist` marks the changes a person asked for, which are the only ones
+    // that should move focus.
+    MDCPanel.setOpen(open, !!persist);
     applyLayoutShift(open);
     applyPlumbingVisibility(open);
     if (persist !== false) {
@@ -774,6 +776,7 @@
       onShowResolved: refresh,
       onReanchor: reanchorThread,
       onCommitToBranch: commitToBranch,
+      onDiagnostics: diagnostics,
       onDismissReanchor: dismissReanchor
     });
 
@@ -793,6 +796,59 @@
 
     loadProfiles();
     startPolling();
+  }
+
+  // MARK: - Telling you what broke
+
+  /**
+   * What the extension can and cannot see right now.
+   *
+   * This exists because the way this fails is silent. It reads a page someone
+   * else owns, and when GitHub changes that page the highlights simply stop
+   * appearing, which looks exactly like not having installed anything. These
+   * are the observations that separate those two, in a form that can be pasted
+   * into a bug report.
+   */
+  function diagnostics() {
+    const root = markdownBody();
+    const manifest = chrome.runtime.getManifest ? chrome.runtime.getManifest() : {};
+    const where = state && state.location;
+    const entries = (state && state.entries) || [];
+    const orphans = entries.filter(function (e) { return e.thread.isOrphaned; }).length;
+    const anchored = entries.length - orphans;
+    const located = entries.filter(function (e) { return e.range; }).length;
+    const references = root ? root.querySelectorAll('[id^="user-content-fnref-mdc-"]').length : 0;
+
+    return [
+      { label: 'Extension', value: manifest.version || 'unknown' },
+      { label: 'File format', value: 'v' + MDCCodec.FORMAT_VERSION },
+      {
+        label: 'Page',
+        value: where ? where.kind + ' ' + where.owner + '/' + where.repo + '@' + where.ref : 'not a supported page',
+        ok: !!where
+      },
+      { label: 'File', value: where ? where.path : '-', ok: !!(where && where.path) },
+      { label: 'Rendered body found', value: root ? 'yes' : 'no', ok: !!root },
+      { label: 'Highlight API', value: CSS && CSS.highlights ? 'available' : 'missing', ok: !!(CSS && CSS.highlights) },
+      { label: 'Threads in file', value: String(entries.length) },
+      {
+        label: 'Anchored threads highlighted',
+        value: located + ' of ' + anchored,
+        // The one that catches a GitHub change: the file says these threads are
+        // anchored, and the page cannot find where.
+        ok: located === anchored
+      },
+      {
+        label: 'Footnote references in page',
+        value: String(references),
+        ok: references > 0 || anchored === 0
+      },
+      { label: 'Orphaned threads', value: String(orphans) },
+      { label: 'Re-anchor candidates', value: String(state ? state.candidates.size : 0) },
+      { label: 'Token saved', value: state && state.hasToken ? 'yes' : 'no', ok: !!(state && state.hasToken) },
+      { label: 'Can write here', value: state && state.canWrite ? 'yes' : 'no', ok: !!(state && state.canWrite) },
+      { label: 'Last error', value: (state && state.error) || 'none', ok: !(state && state.error) }
+    ];
   }
 
   function teardown() {
@@ -901,6 +957,27 @@
     }
   });
 
+  /** True while the keystroke belongs to something being typed into. */
+  function isTyping(target) {
+    if (!target) return false;
+    if (target.isContentEditable) return true;
+    const tag = target.tagName;
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+  }
+
+  /** Moves the selection along the panel's own order, wrapping at both ends. */
+  function stepThread(delta) {
+    const shown = state.entries.filter(function (entry) {
+      return state.showResolved || entry.thread.status !== 'resolved';
+    });
+    if (!shown.length) return;
+    const at = shown.findIndex(function (entry) { return entry.id === state.selectedID; });
+    const next = at === -1
+      ? (delta > 0 ? 0 : shown.length - 1)
+      : (at + delta + shown.length) % shown.length;
+    selectThread(shown[next].id);
+  }
+
   document.addEventListener('keydown', function (event) {
     if (!state || !event.key) return;
     if (event.key === 'Escape' && state.draft) {
@@ -911,6 +988,30 @@
     if ((event.metaKey || event.ctrlKey) && event.altKey && event.key.toLowerCase() === 'm') {
       event.preventDefault();
       beginComment();
+      return;
+    }
+
+    // Single letters, so only while the panel is showing and nothing is being
+    // typed into. GitHub has its own single-key shortcuts, hence preventDefault
+    // on the ones taken here.
+    if (!MDCPanel.isOpen() || isTyping(event.target)) return;
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+    if (event.key === 'j' || event.key === 'k') {
+      event.preventDefault();
+      stepThread(event.key === 'j' ? 1 : -1);
+      return;
+    }
+    if (event.key === 'r' && state.selectedID) {
+      event.preventDefault();
+      MDCPanel.focusReply(state.selectedID);
+      return;
+    }
+    if (event.key === 'e' && state.selectedID) {
+      const thread = state.threads.find(function (t) { return t.id === state.selectedID; });
+      if (!thread || !state.canWrite) return;
+      event.preventDefault();
+      setStatus(thread.id, thread.status === 'resolved' ? 'open' : 'resolved');
     }
   });
 

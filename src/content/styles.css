@@ -125,6 +125,30 @@ html.mdc-hide-plumbing .mdc-generated { display: none; }
   gap: 8px;
 }
 
+.mdc-footer {
+  padding: 6px 12px;
+  border-top: 1px solid var(--mdc-border);
+  display: flex;
+}
+.mdc-link {
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  color: var(--mdc-muted);
+  text-decoration: underline;
+}
+.mdc-link:hover { color: var(--mdc-fg); }
+
+.mdc-diagnostics { display: flex; flex-direction: column; gap: 2px; font-size: 11.5px; }
+.mdc-check { display: flex; gap: 6px; align-items: baseline; }
+.mdc-check-mark { width: 10px; flex: none; color: var(--mdc-muted); }
+.mdc-check-bad .mdc-check-mark { color: #cf222e; }
+.mdc-check-label { color: var(--mdc-muted); flex: none; }
+.mdc-check-value { margin-left: auto; text-align: right; overflow-wrap: anywhere; }
+
 .mdc-empty {
   margin: auto;
   text-align: center;
@@ -260,6 +284,18 @@ html.mdc-hide-plumbing .mdc-generated { display: none; }
   color: var(--mdc-fg);
 }
 .mdc-input:focus { outline: 2px solid var(--mdc-accent); outline-offset: -1px; }
+
+/* Cards are reachable by keyboard, so where the focus is has to be visible.
+   focus-visible rather than focus, so clicking a card does not ring it. */
+.mdc-panel:focus { outline: none; }
+.mdc-card:focus-visible,
+.mdc-button:focus-visible,
+.mdc-icon-button:focus-visible,
+.mdc-toggle:focus-visible,
+.mdc-selection-button:focus-visible {
+  outline: 2px solid var(--mdc-accent);
+  outline-offset: 1px;
+}
 
 .mdc-actions { display: flex; gap: 6px; align-items: center; margin-top: 7px; }
 .mdc-button {

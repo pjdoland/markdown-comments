@@ -16,6 +16,7 @@ const MDCPanel = (function () {
   let countEl = null;
   let handlers = {};
   let lastState = null;
+  let showingDiagnostics = false;
   const pendingText = Object.create(null);
 
   /**
@@ -62,6 +63,11 @@ const MDCPanel = (function () {
 
     root = el('div', 'mdc-panel');
     root.setAttribute('data-mdc-ui', 'panel');
+    root.setAttribute('role', 'complementary');
+    root.setAttribute('aria-label', 'Comments');
+    // Focusable as a container so opening the panel can land here and be
+    // announced, without making the panel itself a tab stop.
+    root.setAttribute('tabindex', '-1');
     root.hidden = true;
 
     const header = el('div', 'mdc-header');
@@ -78,12 +84,26 @@ const MDCPanel = (function () {
     header.appendChild(close);
     root.appendChild(header);
 
+    // Saving, failures and arrivals all land here without the reader looking,
+    // so they are announced rather than only drawn.
     bannerEl = el('div', 'mdc-banner');
+    bannerEl.setAttribute('role', 'status');
+    bannerEl.setAttribute('aria-live', 'polite');
     bannerEl.hidden = true;
     root.appendChild(bannerEl);
 
     listEl = el('div', 'mdc-list');
+    listEl.setAttribute('role', 'list');
     root.appendChild(listEl);
+
+    const footer = el('div', 'mdc-footer');
+    const diagnosticsLink = el('button', 'mdc-link', 'Diagnostics');
+    diagnosticsLink.addEventListener('click', function () {
+      showingDiagnostics = !showingDiagnostics;
+      if (lastState) render(lastState);
+    });
+    footer.appendChild(diagnosticsLink);
+    root.appendChild(footer);
 
     toggle = el('button', 'mdc-toggle');
     toggle.setAttribute('data-mdc-ui', 'toggle');
@@ -109,14 +129,21 @@ const MDCPanel = (function () {
     if (toggle) toggle.remove();
     root = toggle = listEl = bannerEl = countEl = null;
     lastState = null;
+    showingDiagnostics = false;
     for (const key of Object.keys(pendingText)) delete pendingText[key];
   }
 
-  function setOpen(open) {
+  function setOpen(open, moveFocus) {
     if (!root) return;
     root.hidden = !open;
     if (toggle) toggle.hidden = open;
     if (open && lastState) render(lastState);
+
+    // Only when a person asked. Boot also comes through here, and stealing
+    // focus from the document on page load would be its own bug.
+    if (!moveFocus) return;
+    if (open) root.focus();
+    else if (toggle) toggle.focus();
   }
 
   function isOpen() {
@@ -151,6 +178,8 @@ const MDCPanel = (function () {
     const openCount = state.threads.filter(function (t) { return t.status !== 'resolved'; }).length;
     countEl.hidden = openCount === 0;
     countEl.textContent = String(openCount);
+    countEl.setAttribute('aria-label',
+      openCount + (openCount === 1 ? ' open comment' : ' open comments'));
 
     toggle.textContent = openCount ? 'Comments ' + openCount : 'Comments';
     // Always offer the toggle on a supported page. Hiding it when a file has no
@@ -160,6 +189,12 @@ const MDCPanel = (function () {
     renderBanner(state);
 
     listEl.textContent = '';
+
+    if (showingDiagnostics) {
+      renderDiagnostics();
+      restoreFocus(focus);
+      return;
+    }
 
     if (state.draft) listEl.appendChild(draftCard(state.draft));
 
@@ -172,6 +207,7 @@ const MDCPanel = (function () {
     if (resolved.length) {
       const header = el('button', 'mdc-button', resolved.length + ' resolved');
       header.style.alignSelf = 'flex-start';
+      header.setAttribute('aria-expanded', state.showResolved ? 'true' : 'false');
       header.addEventListener('click', function () {
         state.showResolved = !state.showResolved;
         // Whether the resolved threads are on screen decides whether the
@@ -195,6 +231,48 @@ const MDCPanel = (function () {
     }
 
     restoreFocus(focus);
+  }
+
+  /**
+   * The checks, as pass or fail lines with a way to copy the lot. When the
+   * highlights stop appearing, this is the difference between "GitHub changed
+   * something" and "the extension is not running".
+   */
+  function renderDiagnostics() {
+    const report = handlers.onDiagnostics ? handlers.onDiagnostics() : [];
+    const list = el('div', 'mdc-diagnostics');
+
+    for (const check of report) {
+      const row = el('div', 'mdc-check' + (check.ok === false ? ' mdc-check-bad' : ''));
+      row.appendChild(el('span', 'mdc-check-mark', check.ok === false ? '\u00d7' : (check.ok ? '\u2713' : '\u00b7')));
+      row.appendChild(el('span', 'mdc-check-label', check.label));
+      row.appendChild(el('span', 'mdc-check-value', check.value));
+      list.appendChild(row);
+    }
+    listEl.appendChild(list);
+
+    const actions = el('div', 'mdc-actions');
+    actions.appendChild(el('div', 'mdc-spacer'));
+
+    const copy = el('button', 'mdc-button', 'Copy');
+    copy.addEventListener('click', function () {
+      const text = report.map(function (check) {
+        return '- ' + check.label + ': ' + check.value;
+      }).join('\n');
+      navigator.clipboard.writeText(text).then(
+        function () { copy.textContent = 'Copied'; },
+        function () { copy.textContent = 'Copy failed'; }
+      );
+    });
+    actions.appendChild(copy);
+
+    const back = el('button', 'mdc-button mdc-primary', 'Back to comments');
+    back.addEventListener('click', function () {
+      showingDiagnostics = false;
+      if (lastState) render(lastState);
+    });
+    actions.appendChild(back);
+    listEl.appendChild(actions);
   }
 
   function renderBanner(state) {
@@ -285,6 +363,7 @@ const MDCPanel = (function () {
 
   function draftCard(draft) {
     const card = el('div', 'mdc-card mdc-draft');
+    card.setAttribute('role', 'listitem');
     card.appendChild(quote(draft.anchor, false));
 
     const input = el('textarea', 'mdc-input');
@@ -370,6 +449,18 @@ const MDCPanel = (function () {
     const card = el('div', 'mdc-card' +
       (selected ? ' mdc-selected' : '') +
       (thread.status === 'resolved' ? ' mdc-done' : ''));
+
+    card.setAttribute('role', 'listitem');
+    card.setAttribute('tabindex', '0');
+    if (selected) card.setAttribute('aria-current', 'true');
+    card.addEventListener('keydown', function (event) {
+      // The card holds its own buttons and textarea, so only a keypress landing
+      // on the card itself means "select this thread".
+      if (event.target !== card) return;
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      if (handlers.onSelect) handlers.onSelect(selected ? null : thread.id);
+    });
 
     card.appendChild(quote(thread.anchor, thread.isOrphaned || !entry.range));
     if (entry.candidate && state.canWrite) {
@@ -484,6 +575,13 @@ const MDCPanel = (function () {
     if (handlers.onReply) handlers.onReply(id, trimmed);
   }
 
+  /** Puts the caret in a thread's reply box, for the keyboard path. */
+  function focusReply(id) {
+    if (!root || root.hidden) return;
+    const field = root.querySelector('[data-mdc-field="' + CSS.escape('reply:' + id) + '"]');
+    if (field) field.focus();
+  }
+
   function scrollCardIntoView(id) {
     if (!root || root.hidden) return;
     const cards = listEl.querySelectorAll('.mdc-card.mdc-selected');
@@ -496,6 +594,7 @@ const MDCPanel = (function () {
     render: render,
     setOpen: setOpen,
     isOpen: isOpen,
-    scrollCardIntoView: scrollCardIntoView
+    scrollCardIntoView: scrollCardIntoView,
+    focusReply: focusReply
   };
 })();
