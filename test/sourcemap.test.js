@@ -185,3 +185,30 @@ test('the candidate maps back to a span an anchor can wrap', () => {
   assert.ok(wrapped.includes('[['), 'span is insertable');
   assert.ok(!source.slice(found.start, found.end).includes('<!--'));
 });
+
+// MARK: - Re-applying a write after losing a race
+
+// A losing write is re-applied against whatever is on GitHub now. Offsets
+// measured in the copy the selection was made in do not survive that, because
+// someone else's anchor pair has shifted everything after it.
+test('a span re-derived in an edited copy lands on the phrase, not in the markers', () => {
+  const codec = require('../src/codec.js');
+  const ours = 'The quick brown fox jumps over the lazy dog every morning.';
+  const target = 'jumps over the lazy dog';
+  const staleSpan = map.findSourceSpan(ours, target, 0);
+
+  // Someone commits a comment on an earlier phrase while we were typing.
+  const m = codec.anchorMarkers('11111111');
+  const theirs = 'The ' + m.open + 'quick brown fox' + m.close + ' jumps over the lazy dog every morning.';
+
+  assert.strictEqual(theirs.slice(staleSpan.start, staleSpan.end), '-->quick brown fox<!--/',
+    'the stale offsets land inside their anchor pair');
+
+  const fresh = map.findSourceSpan(theirs, target, 0);
+  assert.ok(!fresh.error);
+  assert.strictEqual(theirs.slice(fresh.start, fresh.end), target);
+
+  // And the result is a file where both threads are anchored.
+  const merged = codec.insertAnchor(theirs, 'deadbeef', fresh.start, fresh.end);
+  assert.strictEqual(codec.anchorIDs(merged).size, 2);
+});

@@ -28,6 +28,7 @@
           if (!response) return reject(new Error('No response from the extension.'));
           if (!response.ok) {
             const failure = new Error(response.error || 'Request failed.');
+            failure.status = response.status || 0;
             failure.protectedBranch = !!response.protectedBranch;
             return reject(failure);
           }
@@ -186,12 +187,55 @@
 
   // MARK: - Writing
 
-  async function commit(mutate, message) {
-    if (!state || !state.canWrite) return false;
-
+  /**
+   * The file as this change would leave it, built from what we currently hold.
+   *
+   * Mutations are applied rather than stored, so the same change can be built
+   * again against a newer version of the file. That is what makes recovering
+   * from a losing race possible instead of asking the reader to retype.
+   */
+  function composeWrite(mutate) {
     const next = { body: state.body, threads: state.threads.map(cloneThread) };
     mutate(next);
-    const text = MDCCodec.join(next.body, next.threads);
+    return MDCCodec.join(next.body, next.threads);
+  }
+
+  async function writeOnce(mutate, message) {
+    const text = composeWrite(mutate);
+    const result = await send({
+      type: 'putFile',
+      owner: state.location.owner,
+      repo: state.location.repo,
+      path: state.location.path,
+      branch: state.location.ref,
+      text: text,
+      sha: state.sha,
+      message: message
+    });
+    state.sha = result.sha;
+    const reparsed = MDCCodec.split(text);
+    state.body = reparsed.body;
+    state.threads = reparsed.threads;
+  }
+
+  /** Replaces what we think the file holds with what it actually holds. */
+  async function reloadSource() {
+    const file = await send({
+      type: 'getFile',
+      owner: state.location.owner,
+      repo: state.location.repo,
+      path: state.location.path,
+      ref: state.location.ref
+    });
+    const parsed = MDCCodec.split(file.text);
+    state.sha = file.sha;
+    state.body = parsed.body;
+    state.threads = parsed.threads;
+    findReanchorCandidates();
+  }
+
+  async function commit(mutate, message) {
+    if (!state || !state.canWrite) return false;
 
     state.busy = 'Saving to GitHub...';
     state.error = null;
@@ -200,37 +244,46 @@
     state.pullRequest = null;
     MDCPanel.render(state);
 
+    let carried = null;
     try {
-      const result = await send({
-        type: 'putFile',
-        owner: state.location.owner,
-        repo: state.location.repo,
-        path: state.location.path,
-        branch: state.location.ref,
-        text: text,
-        sha: state.sha,
-        message: message
-      });
-      state.sha = result.sha;
-      const reparsed = MDCCodec.split(text);
-      state.body = reparsed.body;
-      state.threads = reparsed.threads;
+      await writeOnce(mutate, message);
       state.busy = null;
       return true;
     } catch (error) {
-      state.busy = null;
-      if (error.protectedBranch) {
-        // The write is not wrong, just not allowed here. Keep it so the panel
-        // can offer to put it on a branch instead of losing what was typed.
-        state.blockedWrite = { text: text, message: message };
-        state.error = error.message;
-        return false;
+      carried = error;
+    }
+
+    // A 409 means the blob moved under us: someone else committed, or our own
+    // view of the file was behind. Adding a comment does not conflict with
+    // whatever they did, so it is re-applied on top of their version. The
+    // second failure is the one worth reporting.
+    if (carried.status === 409 && !carried.protectedBranch) {
+      try {
+        await reloadSource();
+        await writeOnce(mutate, message);
+        state.busy = null;
+        state.notice = 'The file had changed on GitHub. Your change was applied on top of it.';
+        return true;
+      } catch (again) {
+        carried = again;
       }
-      state.error = error.message.indexOf('changed on GitHub') !== -1
-        ? error.message + ' Reload the page and try again.'
-        : error.message;
+    }
+
+    state.busy = null;
+    if (carried.protectedBranch) {
+      // The write is not wrong, just not allowed here. Keep it so the panel
+      // can offer to put it on a branch instead of losing what was typed.
+      state.blockedWrite = { text: composeWrite(mutate), message: message };
+      state.error = carried.message;
       return false;
     }
+    // Reaching here on a 409 means re-applying lost the race too, which is
+    // either a very busy file or something structurally wrong. Reloading is
+    // then the honest advice, having already tried the thing that usually works.
+    state.error = carried.status === 409
+      ? carried.message + ' Reload the page and try again.'
+      : carried.message;
+    return false;
   }
 
   /**
@@ -313,6 +366,9 @@
         ref: state.location.ref,
         path: state.location.path,
         selectedID: outcome.selectedID || null,
+        // What the write left behind, so the load that follows can tell whether
+        // it is looking at the commit it just made.
+        expectSha: state.sha || null,
         panelOpen: MDCPanel.isOpen(),
         scrollY: window.scrollY,
         notice: outcome.notice || null
@@ -324,6 +380,33 @@
     state.busy = 'Reloading...';
     MDCPanel.render(state);
     location.reload();
+  }
+
+  /**
+   * Asks again for a file that came back older than the commit we just made.
+   *
+   * Rare now that reads bypass the HTTP cache, but a read straight after a
+   * write can still land before the write has propagated. A couple of quick
+   * retries cost less than showing a document with a missing comment.
+   */
+  async function refetchUntilCurrent(where, expectSha, current) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await new Promise(function (done) { setTimeout(done, 300 * (attempt + 1)); });
+      try {
+        const again = await send({
+          type: 'getFile',
+          owner: where.owner,
+          repo: where.repo,
+          path: where.path,
+          ref: where.ref
+        });
+        if (again.sha === expectSha) return again;
+        current = again;
+      } catch (e) {
+        break; // the copy in hand is better than nothing
+      }
+    }
+    return current;
   }
 
   /** The stash left by the write that caused this load, if it was this file. */
@@ -347,7 +430,12 @@
     if (!draft) return;
 
     const ok = await commit(function (next) {
-      next.body = MDCCodec.insertAnchor(next.body, draft.id, draft.start, draft.end);
+      // Offsets are measured against the body this mutation is given, not the
+      // one the selection was made in, so re-applying onto a newer version of
+      // the file anchors to the phrase rather than to a stale offset.
+      const span = MDCSourceMap.findSourceSpan(next.body, draft.anchor, draft.ordinal);
+      if (span.error) throw new Error(span.error);
+      next.body = MDCCodec.insertAnchor(next.body, draft.id, span.start, span.end);
       next.threads = next.threads.concat([{
         id: draft.id,
         status: 'open',
@@ -473,6 +561,7 @@
     state.draft = {
       id: MDCCodec.newID(),
       anchor: text,
+      ordinal: ordinal,
       start: span.start,
       end: span.end,
       range: range.cloneRange()
@@ -705,6 +794,16 @@
       where = Object.assign({}, where, { path: file.path, ref: file.ref || where.ref });
     }
 
+    // Only set when this load is the one a write asked for.
+    const restored = takeStashedViewState(where);
+
+    // A reload we triggered ourselves should be looking at our own commit. If
+    // GitHub hands back an older blob, showing it would drop the comment that
+    // was just added and leave a stale sha for the next write to fail on.
+    if (restored && restored.expectSha && file.sha !== restored.expectSha) {
+      file = await refetchUntilCurrent(where, restored.expectSha, file);
+    }
+
     const parsed = MDCCodec.split(file.text);
     let author = null;
     let authError = null;
@@ -746,8 +845,6 @@
 
     findReanchorCandidates();
 
-    // Only set when this load is the one a write asked for.
-    const restored = takeStashedViewState(where);
     if (restored) {
       const stillHere = state.threads.some(function (t) { return t.id === restored.selectedID; });
       if (stillHere) state.selectedID = restored.selectedID;
