@@ -184,10 +184,10 @@ against real rendered output, so they are checked by hand.
 - **Comments cannot nest.** Selecting text that overlaps an existing comment is
   refused. Overlapping ranges cannot be represented unambiguously, and an editor
   that round-trips the markers can silently drop the inner pair.
-- **Posting reloads the page.** GitHub renders the Markdown on its side, so the
-  only way to see a comment as a real footnote is to ask for the page again. The
-  panel, the selected thread and the scroll position are carried across, but the
-  reload is visible.
+- **The page's own footnote layer stops updating once you write.** GitHub
+  rendered it before the commit and nothing in the browser can re-render it. The
+  panel is the live copy, and the stale layer is hidden rather than shown wrong,
+  so it reappears correct on the next ordinary page load.
 - **A comment that arrives while you are reading may not highlight.** The page
   render predates it, so there is no reference to anchor against. The thread
   still appears in the panel, and the highlight is recovered when its anchor text
