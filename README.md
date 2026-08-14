@@ -125,8 +125,8 @@ Two rules in the format are load-bearing and easy to get wrong:
 `<!--` starts an HTML block, which swallows the rest of the line, strips the
 markers, and leaves `[^mdc-...]` rendered as literal text. So when the opening
 marker is the first thing on its line, the reference goes in front of it and the
-line stays ordinary Markdown. A range spanning several blocks gets one reference
-per block.
+line stays ordinary Markdown. Where a thread has several such markers, each one
+gets its own reference; GFM allows a footnote to be referenced more than once.
 
 **Orphans get no footnote definition.** GitHub renders an unreferenced definition
 as literal text, so a thread whose anchored text was deleted moves to a plain
@@ -134,6 +134,11 @@ as literal text, so a thread whose anchored text was deleted moves to a plain
 
 Changing the `mdc-` prefix is a breaking change: it orphans the comments in every
 document already written.
+
+[docs/FORMAT.md](docs/FORMAT.md) specifies all of this precisely enough to write
+another implementation against. Its conformance vectors are generated from this
+codec and checked by `test/format-spec.test.js`, so the specification cannot
+quietly drift from the code.
 
 ## How it works
 
@@ -168,9 +173,12 @@ it at all.
 No build step. This is plain JavaScript, loaded directly by Chrome.
 
 ```bash
+node --test test/*.test.js           # everything
+
 node --test test/codec.test.js       # the file format
 node --test test/sourcemap.test.js   # selection to source mapping, and re-anchoring
 node --test test/markdown.test.js    # the reply Markdown subset
+node --test test/format-spec.test.js # docs/FORMAT.md against the codec
 ```
 
 The DOM layer has no automated coverage. Both halves of it, how GitHub renders
