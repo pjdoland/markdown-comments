@@ -166,11 +166,29 @@
     return entries;
   }
 
+  /**
+   * The threads the panel is currently showing.
+   *
+   * Resolving a comment files it away, and the document follows the panel: a
+   * resolved thread stops marking the prose until the resolved list is opened,
+   * at which point its highlight comes back with its card. The two never
+   * disagree about what exists, which is what stops a reader clicking a mark
+   * whose thread the panel is refusing to display.
+   *
+   * Highlights are painted by the Custom Highlight API, so this changes a
+   * background colour and moves no text.
+   */
+  function visibleEntries() {
+    return state.entries.filter(function (entry) {
+      return state.showResolved || entry.thread.status !== 'resolved';
+    });
+  }
+
   function refresh() {
     const root = markdownBody();
     if (!state || !root) return;
     state.entries = buildEntries(root);
-    MDCAnchor.applyHighlights(state.entries, state.selectedID);
+    MDCAnchor.applyHighlights(visibleEntries(), state.selectedID);
     applyPlumbingVisibility(MDCPanel.isOpen());
     MDCPanel.render(state);
   }
@@ -421,7 +439,9 @@
       if (thread) thread.status = status;
     }, (status === 'resolved' ? 'Resolve comment on ' : 'Reopen comment on ') + state.location.path);
     if (!ok) return refresh();
-    state.selectedID = id;
+    // Resolving takes the thread out of the prose and out of the list at the
+    // same moment, so holding it selected would point the panel at nothing.
+    state.selectedID = (status === 'resolved' && !state.showResolved) ? null : id;
     markRenderStale();
     refresh();
   }
@@ -823,6 +843,7 @@
       onOpenOptions: function () { send({ type: 'openOptions' }).catch(function () {}); },
       onRetry: retry,
       onSetOpen: setPanelOpen,
+      onShowResolved: refresh,
       onReanchor: reanchorThread,
       onCommitToBranch: commitToBranch,
       onDiagnostics: diagnostics,
@@ -990,7 +1011,7 @@
     const root = markdownBody();
     if (!root || !root.contains(event.target)) return;
 
-    const id = MDCAnchor.threadAtPoint(state.entries, event.clientX, event.clientY);
+    const id = MDCAnchor.threadAtPoint(visibleEntries(), event.clientX, event.clientY);
     if (id) {
       setPanelOpen(true, true);
       selectThread(id);
@@ -1007,9 +1028,7 @@
 
   /** Moves the selection along the panel's own order, wrapping at both ends. */
   function stepThread(delta) {
-    const shown = state.entries.filter(function (entry) {
-      return state.showResolved || entry.thread.status !== 'resolved';
-    });
+    const shown = visibleEntries();
     if (!shown.length) return;
     const at = shown.findIndex(function (entry) { return entry.id === state.selectedID; });
     const next = at === -1

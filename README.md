@@ -61,6 +61,10 @@ Type, submit, and it is committed and pushed immediately.
 to its highlight. Select a thread to reply, resolve, or delete it. Replying to a
 resolved thread reopens it.
 
+Resolving takes the mark off the prose. A resolved thread leaves the document and
+the panel at the same moment, and opening **N resolved** brings both back, so what
+is marked in the document is always what the panel is willing to show.
+
 **When the text a comment was on gets edited**, the thread is orphaned and moves
 to the bottom of the document. If the passage still reads like the one it was
 written about, the panel offers to put it back and shows how close the match is.

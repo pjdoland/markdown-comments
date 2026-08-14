@@ -210,7 +210,10 @@ const MDCPanel = (function () {
       header.setAttribute('aria-expanded', state.showResolved ? 'true' : 'false');
       header.addEventListener('click', function () {
         state.showResolved = !state.showResolved;
-        render(state);
+        // Back through the host: this decides whether resolved threads mark the
+        // prose, so the highlights have to be recomputed, not just the list.
+        if (handlers.onShowResolved) handlers.onShowResolved();
+        else render(state);
       });
       listEl.appendChild(header);
       if (state.showResolved) {
