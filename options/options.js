@@ -20,11 +20,28 @@ function send(message) {
   });
 }
 
-chrome.storage.local.get(['token', 'login']).then(function (stored) {
+const readOnlyRow = document.getElementById('readOnlyRow');
+const readOnlyLink = document.getElementById('readOnly');
+
+/** The reminder offer is pointless once there is a token to remind about. */
+function reflectReadOnlyOffer(stored) {
+  readOnlyRow.hidden = !!stored.token || !!stored.setupDismissed;
+}
+
+chrome.storage.local.get(['token', 'login', 'setupDismissed']).then(function (stored) {
   if (stored.token) {
     tokenInput.value = stored.token;
     show(stored.login ? 'Signed in as @' + stored.login + '.' : 'A token is saved.', true);
   }
+  reflectReadOnlyOffer(stored);
+});
+
+readOnlyLink.addEventListener('click', async function (event) {
+  event.preventDefault();
+  await chrome.storage.local.set({ setupDismissed: true });
+  readOnlyRow.hidden = true;
+  show('Reminder off. Public repositories are readable now; come back here if ' +
+       'you want to post comments later.', true);
 });
 
 saveButton.addEventListener('click', async function () {
@@ -37,6 +54,7 @@ saveButton.addEventListener('click', async function () {
     // Validate before storing, so a typo never becomes the saved state.
     const user = await send({ type: 'validateToken', token: token });
     await chrome.storage.local.set({ token: token, login: user.login });
+    readOnlyRow.hidden = true;
     // Deliberately not "you're all set": this only proves the token is valid,
     // not that it was granted the repository you want to comment in.
     show('Token is valid, signed in as @' + user.login +
@@ -88,5 +106,7 @@ checkButton.addEventListener('click', async function () {
 clearButton.addEventListener('click', async function () {
   await chrome.storage.local.remove(['token', 'login']);
   tokenInput.value = '';
+  const stored = await chrome.storage.local.get('setupDismissed');
+  reflectReadOnlyOffer(stored);
   show('Token removed. Public repositories are still readable.', true);
 });

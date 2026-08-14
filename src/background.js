@@ -353,6 +353,56 @@ async function togglePanelInActiveTab(tab) {
 
 chrome.action.onClicked.addListener(function (tab) { togglePanelInActiveTab(tab); });
 
+// MARK: - Saying that setup is not finished
+
+/**
+ * An extension that needs a token before it can do its main job has one chance
+ * to say so and no interface of its own to say it in. Installing used to do
+ * nothing at all: no window, no badge, nothing until the user happened to open
+ * a Markdown file, open the panel, and read a line in a banner.
+ *
+ * So the toolbar icon carries the state. A badge is the one piece of persistent
+ * UI available on every page, and it costs nothing to look at.
+ *
+ * Reading public repositories genuinely works without a token, so this is not
+ * an error and must be dismissable. Nagging someone who is using the extension
+ * exactly as intended teaches them to ignore the badge.
+ */
+async function reflectSetupState() {
+  const stored = await chrome.storage.local.get(['token', 'setupDismissed']);
+  const settled = !!stored.token || !!stored.setupDismissed;
+
+  await chrome.action.setBadgeText({ text: settled ? '' : '!' });
+  if (!settled) {
+    await chrome.action.setBadgeBackgroundColor({ color: '#BF8700' });
+  }
+  await chrome.action.setTitle({
+    title: settled
+      ? 'Show or hide comments (Alt+C)'
+      : 'Markdown Comments: add a GitHub token to post comments'
+  });
+}
+
+chrome.runtime.onInstalled.addListener(function (details) {
+  reflectSetupState();
+  // Only on a fresh install. Reopening this on every update would be a page
+  // stealing focus to tell someone what they already did.
+  if (details.reason === 'install') {
+    chrome.runtime.openOptionsPage().catch(function () { /* nothing else to try */ });
+  }
+});
+
+if (chrome.runtime.onStartup) chrome.runtime.onStartup.addListener(reflectSetupState);
+
+chrome.storage.onChanged.addListener(function (changes, area) {
+  if (area !== 'local') return;
+  if (changes.token || changes.setupDismissed) reflectSetupState();
+});
+
+// The worker is torn down and restarted freely, and the badge does not survive
+// with it, so the state is reasserted whenever this script runs at all.
+reflectSetupState();
+
 if (chrome.commands && chrome.commands.onCommand) {
   chrome.commands.onCommand.addListener(function (command) {
     if (command === 'toggle-comments') togglePanelInActiveTab(null);

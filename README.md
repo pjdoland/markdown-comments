@@ -23,8 +23,13 @@ Not on the Chrome Web Store yet. Load it unpacked:
 1. Open `chrome://extensions`
 2. Turn on **Developer mode**
 3. Choose **Load unpacked** and select this directory
-4. Open the extension's **Options** and add a
+4. The setup page opens by itself. Add a
    [fine-grained personal access token](https://github.com/settings/tokens?type=beta)
+
+Until a token is saved, the toolbar icon carries a badge, since an extension
+that needs setup before it can do anything has no other way to say so. If you
+only ever read public repositories, the setup page has a link to turn that
+reminder off.
 
 The token needs **Contents: read and write**, and it must list the repositories
 you want to comment in. Fine-grained tokens grant access per repository, so a

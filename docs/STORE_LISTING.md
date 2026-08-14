@@ -96,6 +96,20 @@ Every read and write goes through the GitHub REST API: fetching a Markdown file'
 The comments panel is drawn on github.com pages that render Markdown, and the extension must read the rendered document to locate the commented phrase and highlight it. The match is the whole domain because a Markdown file can appear under many paths: /blob/ for a file, the repository root and /tree/ for READMEs, with arbitrary branch names in between. The content script determines at runtime whether the current page is one of those and does nothing on any other page.
 ```
 
+### Permissions deliberately not requested
+
+Worth having ready, since a reviewer may wonder why `chrome.tabs` is called
+without the permission.
+
+- **`tabs`** is not requested. `chrome.tabs.query` and `chrome.tabs.sendMessage`
+  are used to route the toolbar click and the Alt+C command to the active tab,
+  and only `tab.id` is read. The permission is needed solely to read `url`,
+  `title` or `favIconUrl`, none of which this extension touches.
+- **`scripting`** is not requested. Content scripts are declared statically in
+  the manifest and nothing is injected at runtime.
+- **`activeTab`** is not requested. The content script is already declared for
+  github.com, so there is nothing for it to grant.
+
 ## Privacy practices: data collected
 
 Declare these and nothing else.
@@ -136,6 +150,11 @@ extension is simply not eligible for marquee featuring.
 
 1. `node --test test/*.test.js` passes.
 2. Bump `version` in `manifest.json`.
-3. `./package.sh` and upload the ZIP it prints.
-4. Confirm the privacy policy URL still resolves. A dead link is treated as no
+3. `./package.sh`, then load the unpacked build in a fresh Chrome profile and
+   confirm first run by hand: installing opens the options page, the toolbar
+   badge shows `!` until a token is saved or the reminder is dismissed, and it
+   clears afterwards. None of that can be checked automatically, because
+   headless Chrome silently refuses `--load-extension`.
+4. Upload the ZIP that `package.sh` printed.
+5. Confirm the privacy policy URL still resolves. A dead link is treated as no
    policy at all, and the repository must stay public for it to resolve.
