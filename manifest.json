@@ -1,16 +1,29 @@
 {
   "manifest_version": 3,
   "name": "Markdown Comments",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Google Docs style comments on Markdown files in GitHub repositories, stored inside the file itself.",
+  "homepage_url": "https://github.com/pjdoland/markdown-comments",
   "permissions": ["storage"],
   "host_permissions": ["https://api.github.com/*", "https://github.com/*"],
   "background": {
     "service_worker": "src/background.js"
   },
   "options_page": "options/options.html",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "action": {
-    "default_title": "Show or hide comments (Alt+C)"
+    "default_title": "Show or hide comments (Alt+C)",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   },
   "commands": {
     "toggle-comments": {

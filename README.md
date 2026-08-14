@@ -33,6 +33,10 @@ has a **Check repository access** button that tells you which you have.
 
 Reading public repositories works with no token at all.
 
+**Privacy.** No server, no analytics, no telemetry. The token and everything else
+stay on your machine, and the only thing the extension talks to is GitHub's API,
+using your token, on your behalf. See the [privacy policy](docs/PRIVACY.md).
+
 ## Using it
 
 It runs anywhere GitHub renders Markdown from a repository:
@@ -184,6 +188,13 @@ node --test test/format-spec.test.js # docs/FORMAT.md against the codec
 The DOM layer has no automated coverage. Both halves of it, how GitHub renders
 footnotes and how it strips comments, are only observable in a real browser
 against real rendered output, so they are checked by hand.
+
+`./package.sh` builds the Chrome Web Store ZIP. It packs an explicit list rather
+than excluding things, so a new directory is absent from the package until
+someone names it, and it refuses to build if the manifest points at a file that
+is not there or if a shipped source is not clean UTF-8. Listing copy, permission
+justifications and the data disclosures live in
+[docs/STORE_LISTING.md](docs/STORE_LISTING.md); store images are in `store/`.
 
 ## Limitations
 
